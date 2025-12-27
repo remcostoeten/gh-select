@@ -49,6 +49,8 @@ show_version() {
     echo -e "${BOLD}${CYAN}gh-select${RESET} ${DIM}v${VERSION}${RESET}"
     echo -e "${DIM}A GitHub CLI extension following the gh extension spec${RESET}"
     echo -e ""
+    echo -e "Fuzzy-find and manage your GitHub repos from the terminal."
+    echo -e ""
     echo -e "${DIM}─────────────────────────────────────────${RESET}"
     echo -e "${WHITE}By ${BOLD}${AUTHOR}${RESET}"
     echo -e "${DIM}   ${AUTHOR_HANDLE}${RESET}"
@@ -78,6 +80,7 @@ show_help() {
     echo -e ""
     echo -e "${BOLD}${WHITE}OPTIONS${RESET}"
     echo -e ""
+    echo -e "    ${YELLOW}-n${RESET}, ${YELLOW}--no-cache${RESET}   Bypass cache, fetch fresh data"
     echo -e "    ${YELLOW}-v${RESET}, ${YELLOW}--version${RESET}    Show version information"
     echo -e "    ${YELLOW}-h${RESET}, ${YELLOW}--help${RESET}       Show this help message"
     echo -e ""
@@ -187,27 +190,137 @@ show_help() {
     esac
 }
 
-# Handle command line arguments
-if [[ $# -gt 0 ]]; then
-    case "$1" in
-        --version|-v)
-            show_version
-            exit 0
-            ;;
-        --help|-h)
-            show_help
-            exit 0
-            ;;
-        repo)
-            # Allow 'gh select repo' as mentioned in README
-            ;;
-        *)
-            echo "Unknown option: $1"
-            echo "Use 'gh select --help' for usage information"
+# ─────────────────────────────────────────────────────────────────────────────
+# Auto-Generated Argument System
+# ─────────────────────────────────────────────────────────────────────────────
+# Format: "name:short:function:exit_after"
+# - name: long form (--name), also used for bare form if exit_after=1
+# - short: short form (-x)
+# - function: function to call
+# - exit_after: 1 = exit after, 0 = continue
+
+ARGS=(
+    "version:v:show_version:1"
+    "help:h:show_help:1"
+    "no-cache:n:set_no_cache:0"
+)
+
+# Runtime flags
+FORCE_REFRESH=false
+
+# Flag setters
+set_no_cache() {
+    FORCE_REFRESH=true
+}
+
+# Spellcheck suggestion with interactive prompt
+spellcheck() {
+    local input="${1#--}"  # Strip -- prefix if present
+    input="${input#-}"      # Strip - prefix if present
+    local best_match=""
+    local best_score=0
+    local best_func=""
+    local names=""
+    local input_len=${#input}
+    
+    # Guard against empty input
+    if [[ $input_len -eq 0 ]]; then
+        echo "Unknown option: $1"
+        echo "Use: gh select --help"
+        return 1
+    fi
+    
+    for def in "${ARGS[@]}"; do
+        IFS=':' read -r name short func should_exit <<< "$def"
+        names="$names --$name"
+        
+        # Count matching characters
+        local score=0
+        local i
+        for ((i=0; i<input_len; i++)); do
+            if [[ "$name" == *"${input:$i:1}"* ]]; then
+                score=$((score + 1))
+            fi
+        done
+        
+        # Calculate match percentage
+        local pct=$((score * 100 / input_len))
+        if [[ $pct -gt $best_score ]]; then
+            best_score=$pct
+            best_match="$name"
+            best_func="$func"
+        fi
+    done
+    
+    if [[ $best_score -gt 60 ]]; then
+        echo -n "Did you mean: gh select --$best_match? [Y/n] "
+        read -r response
+        if [[ -z "$response" ]] || [[ "$response" =~ ^[Yy] ]]; then
+            $best_func
+            # Check if we should exit after
+            for def in "${ARGS[@]}"; do
+                IFS=':' read -r name short func should_exit <<< "$def"
+                if [[ "$name" == "$best_match" ]] && [[ "$should_exit" == "1" ]]; then
+                    exit 0
+                fi
+            done
+        else
             exit 1
-            ;;
-    esac
-fi
+        fi
+    else
+        echo "Unknown option: $1"
+        echo "Available:$names"
+        return 1
+    fi
+}
+
+# Parse arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        local arg="$1"
+        local matched=false
+        
+        for def in "${ARGS[@]}"; do
+            IFS=':' read -r name short func should_exit <<< "$def"
+            
+            # Check --long form
+            if [[ "$arg" == "--$name" ]]; then
+                $func
+                [[ "$should_exit" == "1" ]] && exit 0
+                matched=true
+                break
+            fi
+            
+            # Check -short form
+            if [[ "$arg" == "-$short" ]]; then
+                $func
+                [[ "$should_exit" == "1" ]] && exit 0
+                matched=true
+                break
+            fi
+            
+            # Check bare form (only for exit commands like version/help)
+            if [[ "$should_exit" == "1" ]] && [[ "$arg" == "$name" ]]; then
+                $func
+                exit 0
+            fi
+        done
+        
+        # Special case: "repo" is allowed
+        if [[ "$arg" == "repo" ]]; then
+            matched=true
+        fi
+        
+        if [[ "$matched" == false ]]; then
+            spellcheck "$arg"
+            exit 1
+        fi
+        
+        shift
+    done
+}
+
+parse_args "$@"
 
 # Cross-platform clipboard function
 copy_to_clipboard() {
@@ -317,29 +430,91 @@ if ! gh auth status >/dev/null 2>&1; then
     exit 1
 fi
 
-# Create temp file for repositories
-temp_file=$(mktemp)
-trap "rm -f '$temp_file'" EXIT
+# ─────────────────────────────────────────────────────────────────────────────
+# Cache Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/gh-select"
+CACHE_FILE="$CACHE_DIR/repos.json"
+CACHE_FORMATTED="$CACHE_DIR/repos.formatted"
+CACHE_TTL="${GH_SELECT_CACHE_TTL:-1800}"  # 30 minutes default
 
-# Fetch repositories
-if ! gh repo list --json nameWithOwner,description,isPrivate --limit 1000 > "$temp_file" 2>/dev/null; then
-    echo -e "${RED}Error:${RESET} Failed to fetch repositories"
-    exit 1
+mkdir -p "$CACHE_DIR"
+
+cache_is_valid() {
+    [[ "$FORCE_REFRESH" == "true" ]] && return 1
+    [[ ! -f "$CACHE_FILE" ]] && return 1
+    [[ ! -f "$CACHE_FORMATTED" ]] && return 1
+    
+    local cache_age now
+    now=$(date +%s)
+    if [[ "$(uname)" == "Darwin" ]]; then
+        cache_age=$(stat -f %m "$CACHE_FILE" 2>/dev/null || echo 0)
+    else
+        cache_age=$(stat -c %Y "$CACHE_FILE" 2>/dev/null || echo 0)
+    fi
+    
+    (( (now - cache_age) < CACHE_TTL ))
+}
+
+fetch_repos() {
+    printf "${CYAN}Fetching repositories...${RESET}" >&2
+    
+    local repos
+    if ! repos=$(gh repo list --json nameWithOwner,description,isPrivate --limit 1000 2>/dev/null); then
+        printf "\r${RED}Error fetching repositories${RESET}\n" >&2
+        return 1
+    fi
+    
+    local count
+    count=$(echo "$repos" | jq length 2>/dev/null || echo "0")
+    
+    printf "\r\033[K" >&2
+    echo -e "${GREEN}Fetched $count repositories${RESET}" >&2
+    echo "$repos"
+}
+
+format_repos() {
+    jq -r '.[] | (if .isPrivate then "[private]" else "[public]" end) as $privacy | (if .description and .description != "" and .description != null then .description else "No description" end) as $desc | "\(.nameWithOwner)|\($privacy)|\($desc)"' | sort
+}
+
+refresh_cache() {
+    local json_data
+    json_data=$(fetch_repos) || return 1
+    
+    echo "$json_data" > "$CACHE_FILE"
+    echo "$json_data" | format_repos > "$CACHE_FORMATTED"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Load Repositories (with caching)
+# ─────────────────────────────────────────────────────────────────────────────
+
+if cache_is_valid; then
+    cache_age_sec=$(($(date +%s) - $(stat -c %Y "$CACHE_FILE" 2>/dev/null || echo 0)))
+    echo -e "${DIM}Using cache (${cache_age_sec}s old)${RESET}"
+    formatted_repos="$CACHE_FORMATTED"
+else
+    echo -e "${CYAN}Loading repositories...${RESET}"
+    if refresh_cache; then
+        repo_count=$(jq length "$CACHE_FILE" 2>/dev/null || echo "0")
+        echo -e "${GREEN}Loaded $repo_count repositories${RESET}"
+        formatted_repos="$CACHE_FORMATTED"
+    else
+        echo -e "${RED}Failed to fetch repositories${RESET}"
+        exit 1
+    fi
 fi
 
-# Count repos
-repo_count=$(jq length "$temp_file")
+# Exit if only refreshing was requested
+if [[ "$REFRESH_ONLY" == "true" ]]; then
+    exit 0
+fi
 
-if [ "$repo_count" -eq 0 ]; then
+# Validate we have data
+if [[ ! -s "$formatted_repos" ]]; then
     echo -e "${YELLOW}No repositories found${RESET}"
     exit 1
 fi
-
-# Create formatted list for fzf
-formatted_repos=$(mktemp)
-trap "rm -f '$temp_file' '$formatted_repos'" EXIT
-
-jq -r '.[] | (if .isPrivate then "[private]" else "[public]" end) as $privacy | (if .description and .description != "" and .description != null then .description else "No description" end) as $desc | "\(.nameWithOwner) | \($privacy) | \($desc)"' "$temp_file" > "$formatted_repos"
 
 # fzf selection
 selected_line=$(cat "$formatted_repos" | fzf \
