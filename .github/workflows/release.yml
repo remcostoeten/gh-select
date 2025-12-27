@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Extract changelog for this version
+        id: changelog
+        run: |
+          # Extract changelog section for this version
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          # Remove 'v' prefix if present for matching
+          VERSION_NUM="${VERSION#v}"
+          
+          # Extract the section between this version and the next
+          CHANGELOG=$(sed -n "/## \[${VERSION_NUM}\]/,/## \[/p" CHANGELOG.md | sed '$d' | tail -n +2)
+          
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="See CHANGELOG.md for details."
+          fi
+          
+          # Write to file to handle multiline
+          echo "$CHANGELOG" > release_notes.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          body_path: release_notes.md
+          files: |
+            gh-select
+            LICENSE
+            README.md
+          draft: false
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Future: Zig cross-compilation
+  # build-zig:
+  #   name: Build Zig (${{ matrix.target }})
+  #   runs-on: ${{ matrix.os }}
+  #   strategy:
+  #     matrix:
+  #       include:
+  #         - target: x86_64-linux
+  #           os: ubuntu-latest
+  #         - target: x86_64-macos
+  #           os: macos-latest
+  #         - target: aarch64-macos
+  #           os: macos-latest
+  #         - target: x86_64-windows
+  #           os: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: goto-bus-stop/setup-zig@v2
+  #       with:
+  #         version: 0.13.0
+  #     - name: Build
+  #       run: zig build -Doptimize=ReleaseSafe -Dtarget=${{ matrix.target }}
+  #     - name: Upload artifact
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: gh-select-${{ matrix.target }}
+  #         path: zig-out/bin/gh-select*

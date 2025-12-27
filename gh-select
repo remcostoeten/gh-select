@@ -81,6 +81,7 @@ show_help() {
     echo -e "${BOLD}${WHITE}OPTIONS${RESET}"
     echo -e ""
     echo -e "    ${YELLOW}-n${RESET}, ${YELLOW}--no-cache${RESET}   Bypass cache, fetch fresh data"
+    echo -e "    ${YELLOW}-r${RESET}, ${YELLOW}--refresh-only${RESET} Refresh cache and exit"
     echo -e "    ${YELLOW}-v${RESET}, ${YELLOW}--version${RESET}    Show version information"
     echo -e "    ${YELLOW}-h${RESET}, ${YELLOW}--help${RESET}       Show this help message"
     echo -e ""
@@ -203,14 +204,21 @@ ARGS=(
     "version:v:show_version:1"
     "help:h:show_help:1"
     "no-cache:n:set_no_cache:0"
+    "refresh-only:r:set_refresh_only:0"
 )
 
 # Runtime flags
 FORCE_REFRESH=false
+REFRESH_ONLY=false
 
 # Flag setters
 set_no_cache() {
     FORCE_REFRESH=true
+}
+
+set_refresh_only() {
+    FORCE_REFRESH=true
+    REFRESH_ONLY=true
 }
 
 # Spellcheck suggestion with interactive prompt

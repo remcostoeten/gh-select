@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main, feature/*]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fzf jq
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install fzf jq
+
+      - name: Make executable
+        run: chmod +x ./gh-select
+
+      - name: Verify help works
+        run: echo q | ./gh-select --help
+
+      - name: Verify version works
+        run: ./gh-select --version
+
+      - name: Check syntax (shellcheck)
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: '.'
+          ignore_paths: 'v1.0'
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: '.'
+          ignore_paths: 'v1.0'
+          severity: warning
