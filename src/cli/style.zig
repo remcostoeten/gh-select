@@ -19,6 +19,8 @@ pub const magenta = "\x1b[35m";
 pub const cyan = "\x1b[36m";
 pub const white = "\x1b[37m";
 
+pub const cursor_block = "\u{2588}"; // Block character
+
 // Bright colors
 pub const bright_green = "\x1b[92m";
 pub const bright_cyan = "\x1b[96m";

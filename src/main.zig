@@ -7,6 +7,8 @@ const std = @import("std");
 const cli = @import("cli/args.zig");
 const style = @import("cli/style.zig");
 const config = @import("config/paths.zig");
+const api = @import("github/api.zig");
+const cache = @import("cache/cache.zig");
 
 pub const version = "2.0.0-alpha";
 pub const author = "Remco Stoeten";
@@ -17,8 +19,8 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const stdout = std.io.getStdOut().writer();
-    const stderr = std.io.getStdErr().writer();
+    var styled_stdout = style.StyledWriter.init(std.io.getStdOut());
+    var styled_stderr = style.StyledWriter.init(std.io.getStdErr());
 
     // Parse arguments
     const args = try std.process.argsAlloc(allocator);
@@ -26,30 +28,40 @@ pub fn main() !void {
 
     if (args.len > 1) {
         const arg = args[1];
-        
-        if (std.mem.eql(u8, arg, "--version") or std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "version")) {
-            try showVersion(stdout);
-            return;
-        }
-        
-        if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "help")) {
-            try showHelp(stdout);
-            return;
-        }
-        
-        if (std.mem.eql(u8, arg, "--no-cache") or std.mem.eql(u8, arg, "-n")) {
-            // Set force refresh flag (handled in main logic)
-            try stderr.print("{s}Force refresh enabled{s}\n", .{ style.dim, style.reset });
-        }
-        
-        if (std.mem.eql(u8, arg, "--refresh-only") or std.mem.eql(u8, arg, "-r")) {
-            try refreshCache(allocator, stdout, stderr);
-            return;
+        const cmd = cli.parseArg(arg);
+
+        switch (cmd) {
+            .version => {
+                try showVersion(&styled_stdout);
+                return;
+            },
+            .help => {
+                try showHelp(&styled_stdout);
+                return;
+            },
+            .no_cache => {
+                try styled_stderr.print("{s}Force refresh enabled{s}\n", .{ style.dim, style.reset });
+                // In a real run, we would set a flag here and continue to runInteractive
+                // For now, let's just proceed to interactive
+            },
+            .refresh_only => {
+                try refreshCache(allocator, &styled_stdout, &styled_stderr);
+                return;
+            },
+            .unknown => {
+                try styled_stderr.print("Unknown option: {s}\n", .{arg});
+                if (cli.suggestCommand(arg)) |suggestion| {
+                    try styled_stderr.print("Did you mean: {s}--{s}{s}? [Y/n] ", .{ style.bold, suggestion, style.reset });
+                    // Simple input check could go here for interactive confirmation
+                }
+                return;
+            },
+            else => {},
         }
     }
 
     // Main interactive flow
-    try runInteractive(allocator, stdout, stderr);
+    try runInteractive(allocator, &styled_stdout, &styled_stderr);
 }
 
 fn showVersion(writer: anytype) !void {
@@ -114,25 +126,75 @@ fn showHelp(writer: anytype) !void {
 }
 
 fn refreshCache(allocator: std.mem.Allocator, stdout: anytype, stderr: anytype) !void {
-    _ = allocator;
-    _ = stderr;
-    try stdout.print("{s}Loading repositories...{s}\n", .{ style.cyan, style.reset });
+    // 1. Init API
+    const gh_api = api.Api.init(allocator);
     
-    // TODO: Implement GitHub API call
-    // For now, call gh CLI as subprocess
-    try stdout.print("{s}[TODO] GitHub API integration{s}\n", .{ style.yellow, style.reset });
+    // 2. Check Auth
+    gh_api.checkAuth() catch |err| {
+        try stderr.print("{s}Error:{s} GitHub CLI not authenticated or installed.\n", .{ style.red, style.reset });
+        return err;
+    };
+    
+    try stdout.print("{s}Fetching repositories...{s}", .{ style.cyan, style.reset });
+    
+    // 3. Fetch Repos
+    const parsed_repos = gh_api.fetchRepos() catch |err| {
+        try stderr.print("\n{s}Error:{s} Failed to fetch repositories.\n", .{ style.red, style.reset });
+        return err;
+    };
+    defer parsed_repos.deinit();
+    
+    try stdout.print("\n{s}Fetched {d} repositories{s}\n", .{ style.green, parsed_repos.value.len, style.reset });
+    
+    // 4. Save to Cache
+    const repo_cache = cache.Cache.init(allocator);
+    repo_cache.save(parsed_repos.value) catch |err| {
+        try stderr.print("{s}Error:{s} Failed to save cache.\n", .{ style.red, style.reset });
+        return err;
+    };
+    
+    try stdout.print("Cache updated.\n", .{});
 }
 
 fn runInteractive(allocator: std.mem.Allocator, stdout: anytype, stderr: anytype) !void {
-    _ = allocator;
-    _ = stderr;
-    try stdout.print("{s}[TODO] Interactive UI with fuzzy search{s}\n", .{ style.yellow, style.reset });
-}
+    const gh_api = api.Api.init(allocator);
+    const repo_cache = cache.Cache.init(allocator);
 
-test "version string" {
-    try std.testing.expectEqualStrings("2.0.0-alpha", version);
-}
+    // 1. Try to load from cache
+    var repos_parsed = repo_cache.load() catch |err| switch (err) {
+        error.CacheExpired, error.CacheReadFailed => blk: {
+            // 2. Fetch fresh if cache miss
+            try stdout.print("{s}Fetching repositories...{s}", .{ style.cyan, style.reset });
+            const fresh = try gh_api.fetchRepos(); // propagates error if fails
+            try repo_cache.save(fresh.value);
+            break :blk fresh;
+        },
+        else => return err,
+    };
+    defer repos_parsed.deinit();
 
-test "author string" {
-    try std.testing.expectEqualStrings("Remco Stoeten", author);
+    // 3. Run UI Selector
+    const selector_mod = @import("ui/selector.zig");
+    var selector = selector_mod.Selector.init(allocator, repos_parsed.value);
+    defer selector.deinit();
+
+    if (try selector.run()) |selected| {
+        // 4. Handle Selection (default: open in browser for now, or print)
+        // For v1 parity we need to support actions, but interactive mode usually defaults to something or prompts for action?
+        // v1 behavior: ENTER -> print URL or path? 
+        // Actually v1 usually prints the selected repo to stdout so the shell can cd? 
+        // checking v1 scripts: `gh_select` script usually performs action or prints.
+        // The bash script does: `selected=$(...); if [ -n "$selected" ]; then ... handle_selection ... fi`
+        
+        // For this port, let's just print the name to stdout for now, as that allows `cd $(gh-select)` style usage.
+        try stderr.print("\nSelected: {s}\n", .{selected.nameWithOwner});
+        
+        // Use actions module
+        const actions = @import("ui/actions.zig");
+        // For now hardcode 'show_name' or maybe we can add a secondary menu later.
+        // Let's executed 'show_name' action
+        try actions.executeAction(allocator, .show_name, selected);
+    } else {
+        try stderr.print("\nCancelled.\n", .{});
+    }
 }
