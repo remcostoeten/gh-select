@@ -10,7 +10,7 @@ const config = @import("config/paths.zig");
 const api = @import("github/api.zig");
 const cache = @import("cache/cache.zig");
 
-pub const version = "2.0.0-alpha";
+pub const version = "2.0.0-alpha.1";
 pub const author = "Remco Stoeten";
 pub const repo = "https://github.com/remcostoeten/gh-select";
 

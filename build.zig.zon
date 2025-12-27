@@ -1,6 +1,6 @@
 .{
     .name = "gh-select",
-    .version = "2.0.0",
+    .version = "2.0.0-alpha.1",
     .minimum_zig_version = "0.13.0",
     .paths = .{
         "build.zig",
