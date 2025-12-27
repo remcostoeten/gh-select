@@ -1,0 +1,40 @@
+{
+  "version": "v1.0.4",
+  "language": "bash",
+  "date": "2025-12-27T21:58:29+01:00",
+  "system": {
+    "os": "Linux",
+    "arch": "x86_64",
+    "bash": "5.2.21(1)-release"
+  },
+  "repos": {
+    "total": 228,
+    "private": 79,
+    "public": 149
+  },
+  "timing_seconds": {
+    "help":   Help (--help)             avg: [32m0.003s[0m  min: 0.003s  ([2m3 runs[0m)
+.003,
+    "version":   Version (--version)       avg: [32m0.002s[0m  min: 0.003s  ([2m3 runs[0m)
+.002,
+    "cold_start":   Cold start (API fetch)    avg: [32m3.059s[0m  min: 3.060s  ([2m1 runs[0m)
+3.059,
+    "warm_start":   Warm start (cached)       avg: [32m3.299s[0m  min: 3.173s  ([2m3 runs[0m)
+3.299,
+    "cache_refresh":   Cache refresh             avg: [32m2.961s[0m  min: 2.962s  ([2m1 runs[0m)
+2.961
+  },
+  "memory_kb": {
+    "help": "3764",
+    "refresh": "56464"
+  },
+  "binary": {
+    "size_bytes": 23302,
+    "lines": 604
+  },
+  "dependencies": {
+    "gh": "gh version 2.83.1 (2025-11-13)",
+    "fzf": "0.44.1 (debian)",
+    "jq": "jq-1.7"
+  }
+}
