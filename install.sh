@@ -301,7 +301,7 @@ action_uninstall_silent() {
 
 action_uninstall() {
     clear_screen
-    echo -e "${BOLD}${RED}🗑️  Uninstall gh-select${RESET}\n"
+    echo -e "${BOLD}${RED}Uninstall gh-select${RESET}\n"
     
     local installed_version
     installed_version=$(get_installed_version)
@@ -331,7 +331,7 @@ action_uninstall() {
 
 action_build_local() {
     clear_screen
-    echo -e "${BOLD}${YELLOW}🔨 Build Locally${RESET}\n"
+    echo -e "${BOLD}${YELLOW}Build Locally${RESET}\n"
     
     # Check for Zig
     if ! command -v zig &>/dev/null; then
@@ -367,7 +367,7 @@ action_build_local() {
 
 action_check_updates() {
     clear_screen
-    echo -e "${BOLD}${BLUE}🔄 Check for Source Updates${RESET}\n"
+    echo -e "${BOLD}${BLUE}Check for Source Updates${RESET}\n"
     
     log_info "Checking for updates from ${REPO_URL}..."
     echo ""
@@ -414,7 +414,7 @@ action_check_updates() {
 
 action_view_source() {
     clear_screen
-    echo -e "${BOLD}${MAGENTA}🌐 View Source${RESET}\n"
+    echo -e "${BOLD}${MAGENTA}View Source${RESET}\n"
     
     log_info "Opening ${REPO_URL} ..."
     
@@ -435,7 +435,7 @@ action_view_source() {
 
 action_help() {
     clear_screen
-    echo -e "${BOLD}${WHITE}❓ Help & About${RESET}\n"
+    echo -e "${BOLD}${WHITE}Help & About${RESET}\n"
     
     echo -e "${CYAN}gh-select${RESET} v${VERSION}"
     echo -e "${DIM}Interactive GitHub Repository Selector${RESET}"

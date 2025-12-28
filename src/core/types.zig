@@ -5,6 +5,7 @@ const std = @import("std");
 pub const Repository = struct {
     nameWithOwner: []const u8,
     description: ?[]const u8 = null,
+    homepageUrl: ?[]const u8 = null,
     isPrivate: bool,
     
     // Helper to get just the owner or just the name might be useful later

@@ -67,3 +67,15 @@ pub const Cache = struct {
         return parsed;
     }
 };
+
+// Unit tests
+test "Cache init default TTL" {
+    const cache = Cache.init(std.testing.allocator);
+    try std.testing.expectEqual(@as(i64, 1800), cache.ttl_seconds);
+}
+
+test "Cache TTL is 30 minutes" {
+    const cache = Cache.init(std.testing.allocator);
+    // 30 minutes = 30 * 60 = 1800 seconds
+    try std.testing.expectEqual(@as(i64, 30 * 60), cache.ttl_seconds);
+}

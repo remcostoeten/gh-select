@@ -26,6 +26,17 @@ pub const bright_green = "\x1b[92m";
 pub const bright_cyan = "\x1b[96m";
 pub const bright_white = "\x1b[97m";
 
+// Tokyo Night Theme (TrueColor)
+pub const tn_bg = "\x1b[48;2;26;27;38m";
+pub const tn_fg = "\x1b[38;2;192;202;245m";     // #c0caf5
+pub const tn_blue = "\x1b[38;2;122;162;247m";   // #7aa2f7
+pub const tn_cyan = "\x1b[38;2;125;207;255m";   // #7dcfff
+pub const tn_magenta = "\x1b[38;2;187;154;247m";// #bb9af7
+pub const tn_green = "\x1b[38;2;158;206;106m";  // #9ece6a
+pub const tn_red = "\x1b[38;2;247;118;142m";    // #f7768e
+pub const tn_yellow = "\x1b[38;2;224;175;104m"; // #e0af68
+pub const tn_comment = "\x1b[38;2;86;95;137m";  // #565f89 (dim)
+
 /// Check if colors should be enabled at runtime
 pub fn colorsEnabled() bool {
     // Respect NO_COLOR environment variable

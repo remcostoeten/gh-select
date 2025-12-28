@@ -171,6 +171,7 @@ fn runInteractive(allocator: std.mem.Allocator, stdout: anytype, stderr: anytype
         },
         else => return err,
     };
+    try stdout.print("{s}Using cached repositories{s}\n", .{ style.dim, style.reset });
     defer repos_parsed.deinit();
 
     // 3. Run UI Selector
@@ -179,21 +180,16 @@ fn runInteractive(allocator: std.mem.Allocator, stdout: anytype, stderr: anytype
     defer selector.deinit();
 
     if (try selector.run()) |selected| {
-        // 4. Handle Selection (default: open in browser for now, or print)
-        // For v1 parity we need to support actions, but interactive mode usually defaults to something or prompts for action?
-        // v1 behavior: ENTER -> print URL or path? 
-        // Actually v1 usually prints the selected repo to stdout so the shell can cd? 
-        // checking v1 scripts: `gh_select` script usually performs action or prints.
-        // The bash script does: `selected=$(...); if [ -n "$selected" ]; then ... handle_selection ... fi`
+        // 4. Show Action Menu
+        const action_menu = @import("ui/action_menu.zig");
+        var menu = action_menu.ActionMenu.init(allocator);
         
-        // For this port, let's just print the name to stdout for now, as that allows `cd $(gh-select)` style usage.
-        try stderr.print("\nSelected: {s}\n", .{selected.nameWithOwner});
-        
-        // Use actions module
-        const actions = @import("ui/actions.zig");
-        // For now hardcode 'show_name' or maybe we can add a secondary menu later.
-        // Let's executed 'show_name' action
-        try actions.executeAction(allocator, .show_name, selected);
+        if (try menu.run(selected)) |action| {
+            const actions = @import("ui/actions.zig");
+            try actions.executeAction(allocator, action, selected);
+        } else {
+            try stderr.print("\nCancelled.\n", .{});
+        }
     } else {
         try stderr.print("\nCancelled.\n", .{});
     }

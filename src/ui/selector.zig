@@ -41,14 +41,11 @@ pub const Selector = struct {
     fn fuzzyScore(haystack: []const u8, needle: []const u8) ?i64 {
         if (needle.len == 0) return 0;
         
-        // Helper to check containment without allocations for speed
-        // But for fuzzy we want subsequence.
-        
         var score: i64 = 0;
         var h_idx: usize = 0;
         var n_idx: usize = 0;
         var consecutive_matches: i64 = 0;
-        var first_char_bonus: bool = true; // Bonus for matching start of string
+        var first_char_bonus: bool = true;
 
         while (h_idx < haystack.len and n_idx < needle.len) {
             const h_char = std.ascii.toLower(haystack[h_idx]);
@@ -57,18 +54,15 @@ pub const Selector = struct {
             if (h_char == n_char) {
                 score += 10;
                 
-                // Bonus for consecutive matches
                 if (consecutive_matches > 0) {
-                    score += 5 + consecutive_matches; // Increasing bonus
+                    score += 5 + consecutive_matches; 
                 }
                 consecutive_matches += 1;
 
-                // Bonus for start of word boundaries
                 if (h_idx == 0 or haystack[h_idx-1] == '/' or haystack[h_idx-1] == '-' or haystack[h_idx-1] == '_') {
                     score += 20;
                 }
                 
-                // Huge bonus for exact substring match of the query at the beginning
                 if (first_char_bonus and h_idx == 0) {
                     score += 50;
                 }
@@ -77,15 +71,13 @@ pub const Selector = struct {
             } else {
                 consecutive_matches = 0;
                 first_char_bonus = false;
-                // Tiny penalty for gap, but we primarily care about presence and order
                 score -= 1; 
             }
             h_idx += 1;
         }
 
-        if (n_idx < needle.len) return null; // Not all characters matched
+        if (n_idx < needle.len) return null; 
 
-        // Penalty for length difference (shorter matches are better)
         const len_diff = @as(i64, @intCast(haystack.len)) - @as(i64, @intCast(n_idx));
         score -= len_diff * 2;
 
@@ -99,29 +91,23 @@ pub const Selector = struct {
         const q = self.query.items;
 
         if (q.len == 0) {
-            // No query: show all, preserve original order (or maybe reverse chrono if we had it?)
-            // For now, original order.
             try self.filtered_matches.ensureTotalCapacity(self.repos.len);
             for (0..self.repos.len) |i| {
                 self.filtered_matches.appendAssumeCapacity(.{ .index = i, .score = 0 });
             }
         } else {
-            // Fuzzy match
             for (self.repos, 0..) |repo, i| {
                 if (fuzzyScore(repo.nameWithOwner, q)) |score| {
                     try self.filtered_matches.append(.{ .index = i, .score = score });
                 }
             }
-            
-            // Sort by score descending
             std.sort.block(Match, self.filtered_matches.items, {}, Match.lessThan);
         }
         
-        // Reset selection bounds
         if (self.filtered_matches.items.len == 0) {
             self.selected_index = 0;
         } else if (self.selected_index >= self.filtered_matches.items.len) {
-            self.selected_index = 0; // Reset to top on filter change usually feels better
+            self.selected_index = 0; 
         }
     }
 
@@ -129,27 +115,44 @@ pub const Selector = struct {
     pub fn run(self: *Selector) !?types.Repository {
         try self.updateFilter();
         
-        const stdout = std.io.getStdOut().writer();
-        var tui_engine = try tui.Tui.init(stdout);
+        const stdout_file = std.io.getStdOut().writer();
+        var bw = std.io.bufferedWriter(stdout_file);
+        const stdout = bw.writer();
+        
+        var tui_engine = try tui.Tui.init(stdout_file);
         try tui_engine.enableRawMode();
         defer tui_engine.disableRawMode() catch {};
 
         while (true) {
-            try tui_engine.clear();
+            // Buffer the cleared frame
+            try stdout.print("\x1b[2J\x1b[H", .{}); 
             
-            // 1. Header with search box style
+            const term_size = try tui_engine.getTermSize();
+            const term_height = term_size.rows;
+            const term_width = term_size.cols;
+
+            // 1. Header
             try tui_engine.setCursor(0, 0);
-            try stdout.print("{s} Search {s} {s} {s}", .{ style.bold, style.reset, self.query.items, style.cursor_block });
+            try stdout.print("{s}{s} gh-select {s}{s} {s}{s} {s}", .{ 
+                style.tn_bg, style.tn_blue, style.reset, 
+                style.tn_fg, self.query.items, style.cursor_block, style.reset 
+            });
             
-            // 2. List
+            // Layout Calculations
             const list_start_row = 2;
-            const term_height = 20; // TODO: Dynamic height would be better
-            const visible_rows = term_height - list_start_row - 2;
-            
+            const status_height = 3;
+            var visible_rows = term_height - list_start_row - status_height;
+            if (visible_rows > term_height) visible_rows = 10;
+
+            const half_width = term_width / 2;
+            const left_width = half_width - 1; 
+            const right_start_col = half_width + 2; 
+            const right_width = term_width - right_start_col;
+
             const total_matches = self.filtered_matches.items.len;
             const max_items = @min(total_matches, visible_rows);
             
-            // Simple scrolling: keep selected in middle if possible
+            // Scroll logic
             var start_idx: usize = 0;
             if (self.selected_index > visible_rows / 2) {
                 start_idx = self.selected_index - visible_rows / 2;
@@ -162,74 +165,134 @@ pub const Selector = struct {
                 }
             }
 
-            for (0..max_items) |i| {
-                const match_idx = start_idx + i;
-                if (match_idx >= total_matches) break;
-
-                const match = self.filtered_matches.items[match_idx];
-                const repo = self.repos[match.index];
-                const is_selected = (match_idx == self.selected_index);
+            // --- LEFT PANE (LIST) ---
+            for (0..visible_rows) |i| {
+                const row = list_start_row + i;
+                try tui_engine.setCursor(row, 0);
                 
-                try tui_engine.setCursor(list_start_row + i, 0);
-                
-                // Icon based on privacy
-                const status_icon = if (repo.isPrivate) "🔒" else "  "; // 2 spaces for alignment
-                
-                if (is_selected) {
-                    try stdout.print("{s}> {s} {s}{s}", .{ 
-                        style.cyan, 
-                        status_icon,
-                        repo.nameWithOwner, 
-                        style.reset 
-                    });
+                if (i < max_items) {
+                    const match_idx = start_idx + i;
+                    const match = self.filtered_matches.items[match_idx];
+                    const repo = self.repos[match.index];
+                    const is_selected = (match_idx == self.selected_index);
                     
-                    // Show description on new line or same line? 
-                    // Let's put it on the same line if it fits, or trunc.
-                    if (repo.description) |desc| {
-                        // Truncate desc to roughly 50 chars for clean TUI
-                        var desc_len = desc.len;
-                        if (desc_len > 60) desc_len = 60;
-                        try stdout.print(" {s}- {s}{s}", .{ style.dim, desc[0..desc_len], style.reset });
-                    }
-                } else {
-                     try stdout.print("  {s} {s}{s}", .{ 
-                        status_icon,
-                        repo.nameWithOwner,
-                        style.reset 
-                    });
-                     if (repo.description) |desc| {
-                        var desc_len = desc.len;
-                        if (desc_len > 60) desc_len = 60;
-                        try stdout.print(" {s}{s}{s}", .{ style.dim, desc[0..desc_len], style.reset });
+                    const status_icon = if (repo.isPrivate) "🔒" else "  ";
+                    
+                    // Truncate name
+                    var name_limit = left_width -| 5; 
+                    if (name_limit < 5) name_limit = 5;
+                    var name_v = repo.nameWithOwner;
+                    if (name_v.len > name_limit) name_v = name_v[0..name_limit];
+
+                    if (is_selected) {
+                        try stdout.print("{s}{s} {s} {s}", .{ 
+                            style.tn_bg, style.tn_magenta, 
+                            status_icon, name_v 
+                        });
+                        try stdout.print("{s}", .{style.reset});
+                    } else {
+                        try stdout.print("  {s} {s}{s}", .{ status_icon, name_v, style.reset });
                     }
                 }
             }
-            
-            if (total_matches == 0) {
-                 try tui_engine.setCursor(list_start_row, 0);
-                 try stdout.print("  {s}No matches found.{s}", .{ style.dim, style.reset });
+
+            // --- SEPARATOR ---
+            for (0..visible_rows) |i| {
+                try tui_engine.setCursor(list_start_row + i, half_width);
+                try stdout.print("{s}│{s}", .{style.tn_comment, style.reset});
+            }
+
+            // --- RIGHT PANE (PREVIEW) ---
+            if (total_matches > 0) {
+                var safe_idx = self.selected_index;
+                if (safe_idx >= self.filtered_matches.items.len) safe_idx = 0;
+                
+                const selected_repo = self.repos[self.filtered_matches.items[safe_idx].index];
+                
+                var r: usize = list_start_row;
+                // Name
+                try tui_engine.setCursor(r, right_start_col);
+                try stdout.print("{s}name: {s}{s} {s}{s}", .{style.tn_comment, style.reset, style.tn_blue, selected_repo.nameWithOwner, style.reset});
+                r += 1;
+                
+                // Visibility
+                try tui_engine.setCursor(r, right_start_col);
+                const vis = if (selected_repo.isPrivate) "Private 🔒" else "Public 🌍";
+                try stdout.print("{s}visibility: {s}{s}{s}{s}", .{style.tn_comment, style.reset, style.tn_magenta, vis, style.reset});
+                r += 1;
+                
+                // Homepage
+                if (selected_repo.homepageUrl) |url| {
+                     try tui_engine.setCursor(r, right_start_col);
+                     try stdout.print("{s}url: {s}{s}{s}{s}", .{style.tn_comment, style.reset, style.tn_cyan, url, style.reset});
+                     r += 1;
+                }
+
+                r += 1; // Spacer
+                
+                // Description
+                if (selected_repo.description) |desc| {
+                     try tui_engine.setCursor(r, right_start_col);
+                     try stdout.print("{s}description:{s}", .{style.tn_comment, style.reset});
+                     r += 1;
+                     
+                     var remaining = desc;
+                     // Simple wrapping
+                     while (remaining.len > 0 and r < list_start_row + visible_rows) {
+                         try tui_engine.setCursor(r, right_start_col);
+                         const take = @min(remaining.len, right_width);
+                         try stdout.print(" {s}", .{remaining[0..take]});
+                         
+                         if (take < remaining.len) {
+                             remaining = remaining[take..];
+                         } else {
+                             remaining = "";
+                         }
+                         r += 1;
+                     }
+                }
+                
+                r += 1;
+                if (r < list_start_row + visible_rows) {
+                     try tui_engine.setCursor(r, right_start_col);
+                     try stdout.print("{s}Press 'w' to view on GitHub{s}", .{style.dim, style.reset});
+                }
+
+            } else {
+                try tui_engine.setCursor(list_start_row, right_start_col);
+                try stdout.print("{s}No repositories found.{s}", .{style.tn_comment, style.reset});
             }
             
-            // 3. Status Footer
-            try tui_engine.setCursor(term_height, 0);
-            try stdout.print("{s}Navigate: ↑/↓ | Select: Enter | Quit: Esc/Ctrl+C{s}", .{ style.dim, style.reset });
-            try stdout.print(" {s}[{d}/{d}]{s}", .{ style.blue, self.selected_index + 1, total_matches, style.reset });
+            // Footer
+            const footer_row = term_height - 3;
+            try tui_engine.setCursor(footer_row, 0);
+            try stdout.print("{s}─{s}", .{ style.tn_comment, style.reset });
+            
+            try tui_engine.setCursor(footer_row + 1, 0);
+            try stdout.print("{s}{d}/{d} {s}Selections: Enter | Quit: Esc/q{s}", .{ 
+                style.tn_cyan, self.selected_index + 1, total_matches,
+                style.tn_comment, style.reset 
+            });
+            try tui_engine.setCursor(footer_row + 2, 0);
+            try stdout.print("{s}Quick Actions: [w]eb [r]emote [o]pen{s}", .{ style.tn_comment, style.reset });
 
-            // Handle input
+            // FLUSH
+            try bw.flush();
+
+            // Input
             const key = try tui_engine.readKey();
             switch (key) {
                 .ctrl => |c| if (c == 3) return null,
                 .escape => return null,
                 .enter => {
                     if (self.filtered_matches.items.len > 0) {
-                        return self.repos[self.filtered_matches.items[self.selected_index].index];
+                         var safe_idx = self.selected_index;
+                         if (safe_idx >= self.filtered_matches.items.len) safe_idx = 0;
+                         return self.repos[self.filtered_matches.items[safe_idx].index];
                     }
-                    // If no matches but hitting enter, maybe do nothing?
                 },
                 .up => {
                     if (self.selected_index > 0) self.selected_index -= 1;
-                    // Wrap around? 
-                    // else self.selected_index = total_matches - 1;
                 },
                 .down => {
                     if (self.selected_index + 1 < total_matches) {
@@ -237,8 +300,34 @@ pub const Selector = struct {
                     }
                 },
                 .char => |c| {
-                    try self.query.append(c);
-                    try self.updateFilter();
+                    if (self.filtered_matches.items.len > 0) {
+                        var safe_idx = self.selected_index;
+                        if (safe_idx >= self.filtered_matches.items.len) safe_idx = 0;
+                        const current_repo = self.repos[self.filtered_matches.items[safe_idx].index];
+                        
+                        // Quick actions
+                        if (c == 'w') {
+                            const actions = @import("actions.zig");
+                            try actions.executeAction(self.allocator, .open_browser, current_repo);
+                            return null; 
+                        } else if (c == 'r') {
+                             const actions = @import("actions.zig");
+                             try actions.executeAction(self.allocator, .copy_url, current_repo);
+                        } else if (c == 'o') {
+                             return current_repo; 
+                        } else {
+                            try self.query.append(c);
+                            try self.updateFilter();
+                        }
+                    } else {
+                        if (c != 'w' and c != 'r' and c != 'o') {
+                            try self.query.append(c);
+                            try self.updateFilter();
+                        } else {
+                             try self.query.append(c);
+                             try self.updateFilter();
+                        }
+                    }
                 },
                 .backspace => {
                     if (self.query.items.len > 0) {
@@ -249,5 +338,61 @@ pub const Selector = struct {
                 else => {},
             }
         }
-    }
 };
+
+// Unit tests for fuzzy scoring
+test "fuzzyScore empty needle returns 0" {
+    const score = Selector.fuzzyScore("anything", "");
+    try std.testing.expectEqual(@as(?i64, 0), score);
+}
+
+test "fuzzyScore exact match scores high" {
+    const score = Selector.fuzzyScore("hello", "hello");
+    try std.testing.expect(score != null);
+    try std.testing.expect(score.? > 0);
+}
+
+test "fuzzyScore case insensitive" {
+    const score1 = Selector.fuzzyScore("Hello", "hello");
+    const score2 = Selector.fuzzyScore("hello", "HELLO");
+    try std.testing.expect(score1 != null);
+    try std.testing.expect(score2 != null);
+}
+
+test "fuzzyScore no match returns null" {
+    const score = Selector.fuzzyScore("abc", "xyz");
+    try std.testing.expectEqual(@as(?i64, null), score);
+}
+
+test "fuzzyScore subsequence match" {
+    // "ac" is a subsequence of "abc"
+    const score = Selector.fuzzyScore("abc", "ac");
+    try std.testing.expect(score != null);
+}
+
+test "fuzzyScore prefers word boundary matches" {
+    // Matching at word boundary "g" in "gh-select" should score higher
+    const score_boundary = Selector.fuzzyScore("gh-select", "gs");
+    const score_middle = Selector.fuzzyScore("aghselectb", "gs");
+    try std.testing.expect(score_boundary != null);
+    try std.testing.expect(score_middle != null);
+    try std.testing.expect(score_boundary.? > score_middle.?);
+}
+
+test "fuzzyScore consecutive matches score higher" {
+    // "ab" consecutive in "abc" should score higher than spread in "aXbXc"
+    const score_consecutive = Selector.fuzzyScore("abc", "ab");
+    const score_spread = Selector.fuzzyScore("aXb", "ab");
+    try std.testing.expect(score_consecutive != null);
+    try std.testing.expect(score_spread != null);
+    try std.testing.expect(score_consecutive.? > score_spread.?);
+}
+
+test "fuzzyScore shorter haystack preferred" {
+    // Exact match in shorter string should beat match in longer string
+    const score_short = Selector.fuzzyScore("cat", "cat");
+    const score_long = Selector.fuzzyScore("category", "cat");
+    try std.testing.expect(score_short != null);
+    try std.testing.expect(score_long != null);
+    try std.testing.expect(score_short.? > score_long.?);
+}

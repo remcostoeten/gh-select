@@ -44,7 +44,7 @@ pub const Api = struct {
         // gh repo list --json nameWithOwner,description,isPrivate --limit 1000
         const argv = [_][]const u8{
             "gh", "repo", "list",
-            "--json", "nameWithOwner,description,isPrivate",
+            "--json", "nameWithOwner,description,homepageUrl,isPrivate",
             "--limit", "1000",
         };
 

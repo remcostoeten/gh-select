@@ -127,7 +127,19 @@ pub const Tui = struct {
         try self.writer.print("\x1b[2J\x1b[H", .{});
     }
 
+    pub fn getTermSize(self: *Tui) !struct { rows: usize, cols: usize } {
+        _ = self;
+        return .{ .rows = 24, .cols = 80 };
+    }
+
     pub fn setCursor(self: *Tui, row: usize, col: usize) !void {
        try self.writer.print("\x1b[{d};{d}H", .{ row + 1, col + 1 });
+    }
+
+    pub fn writeSpaces(self: *Tui, count: usize) !void {
+        var i: usize = 0;
+        while (i < count) : (i += 1) {
+            try self.writer.print(" ", .{});
+        }
     }
 };
