@@ -44,7 +44,6 @@ jobs:
         with:
           body_path: release_notes.md
           files: |
-            gh-select
             LICENSE
             README.md
           draft: false
@@ -52,30 +51,46 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Future: Zig cross-compilation
-  # build-zig:
-  #   name: Build Zig (${{ matrix.target }})
-  #   runs-on: ${{ matrix.os }}
-  #   strategy:
-  #     matrix:
-  #       include:
-  #         - target: x86_64-linux
-  #           os: ubuntu-latest
-  #         - target: x86_64-macos
-  #           os: macos-latest
-  #         - target: aarch64-macos
-  #           os: macos-latest
-  #         - target: x86_64-windows
-  #           os: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: goto-bus-stop/setup-zig@v2
-  #       with:
-  #         version: 0.13.0
-  #     - name: Build
-  #       run: zig build -Doptimize=ReleaseSafe -Dtarget=${{ matrix.target }}
-  #     - name: Upload artifact
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: gh-select-${{ matrix.target }}
-  #         path: zig-out/bin/gh-select*
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-linux
+            artifact: gh-select-linux-amd64
+          - target: aarch64-linux
+            artifact: gh-select-linux-arm64
+          - target: x86_64-macos
+            artifact: gh-select-darwin-amd64
+          - target: aarch64-macos
+            artifact: gh-select-darwin-arm64
+          - target: x86_64-windows
+            artifact: gh-select-windows-amd64.exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.13.0
+
+      - name: Build
+        run: zig build -Doptimize=ReleaseFast -Dtarget=${{ matrix.target }}
+
+      - name: Rename binary
+        run: |
+          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+            mv zig-out/bin/gh-select.exe ${{ matrix.artifact }}
+          else
+            mv zig-out/bin/gh-select ${{ matrix.artifact }}
+          fi
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ matrix.artifact }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

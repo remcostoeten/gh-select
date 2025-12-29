@@ -21,6 +21,13 @@ pub const Selector = struct {
         }
     };
 
+    pub fn getSelectedRepo(self: *Selector) ?types.Repository {
+        if (self.filtered_matches.items.len == 0) return null;
+        var safe_idx = self.selected_index;
+        if (safe_idx >= self.filtered_matches.items.len) safe_idx = 0;
+        return self.repos[self.filtered_matches.items[safe_idx].index];
+    }
+
     pub fn init(allocator: std.mem.Allocator, repos: []types.Repository) Selector {
         return .{
             .allocator = allocator,
@@ -338,6 +345,7 @@ pub const Selector = struct {
                 else => {},
             }
         }
+    }
 };
 
 // Unit tests for fuzzy scoring

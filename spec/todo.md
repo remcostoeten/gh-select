@@ -42,8 +42,9 @@ This document is the **internal, Git-driven spec** for the migration and develop
 
 ### 🚧 Phase 4: Version & Changelog
 - [x] Bump to `2.0.0-alpha`
+- [x] Cross-platform release workflow (Linux, macOS, Windows)
 - [ ] Final testing across environments
-- [ ] Create release binary
+- [ ] Tag & publish release
 
 ---
 
@@ -68,7 +69,7 @@ This document is the **internal, Git-driven spec** for the migration and develop
 - [ ] Smart ranking (stars, last updated, name match)
 - [ ] Filters (owner, language, topics)
 - [ ] Sorting options
-- [ ] Result caching
+sssss [ ] Result caching
 
 ### 3. Repository Grouping via CLI
 - [ ] Local groups/collections
