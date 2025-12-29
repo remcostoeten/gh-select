@@ -43,21 +43,25 @@ This document is the **internal, Git-driven spec** for the migration and develop
 ### 🚧 Phase 4: Version & Changelog
 - [x] Bump to `2.0.0-alpha`
 - [x] Cross-platform release workflow (Linux, macOS, Windows)
-- [ ] Final testing across environments
-- [ ] Tag & publish release
+- [x] Final testing across environments
+- [x] Tag & publish release `v2.0.0-alpha.1`
 
 ---
 
 ## Known Issues / Tech Debt
 
-- [ ] Dynamic terminal resize (fallback 24x80 due to Zig 0.13 ioctl bug)
-- [ ] Clipboard feedback toast ("Copied!" message)
+- [ ] Dynamic terminal resize (fallback 24x80 due to [`std.Progress` ioctl limitations in Zig 0.13.0](https://ziglang.org/download/0.13.0/release-notes.html#reworked-cli-progress))
 
 ---
 
 ## Feature Roadmap (Post-Migration)
 
-### 1. Repository Metadata Editing
+*Prioritized by user value and complexity.*
+
+### Phase 1: UX Polish (High Priority)
+- [ ] Clipboard feedback toast ("Copied!" message)
+
+### Phase 2: Repository Metadata Editing (Medium Priority)
 - [ ] Rename repository
 - [ ] Edit description
 - [ ] Manage topics
@@ -69,21 +73,21 @@ This document is the **internal, Git-driven spec** for the migration and develop
 - [ ] Smart ranking (stars, last updated, name match)
 - [ ] Filters (owner, language, topics)
 - [ ] Sorting options
-sssss [ ] Result caching
+- [ ] Result caching
 
-### 3. Repository Grouping via CLI
+### Phase 4: Repository Grouping via CLI (Low Priority)
 - [ ] Local groups/collections
 - [ ] CRUD for groups
 - [ ] Repo can belong to multiple groups
 - [ ] Filter by group in UI
 
-### 4. Clone Specific Branch
+### Phase 5: Advanced Cloning (Future)
 - [ ] Select repo
 - [ ] Fetch branch list
 - [ ] Select branch
 - [ ] Clone with single branch / shallow depth
 
-### 5. Clone Specific Files/Folders Only
+### Phase 6: Clone Specific Files/Folders Only
 - [ ] Inspect repo tree
 - [ ] Multi-select files and folders
 - [ ] Only extract selected paths
@@ -99,6 +103,13 @@ sssss [ ] Result caching
 - [x] Cache TTL
 
 ### Integration Tests
+- [ ] Installer script (`install.sh`)
+    - [ ] Install, uninstall, update
+    - [ ] Build from source
+- [ ] Interactive TUI
+    - [ ] Navigation & selection
+    - [ ] Search filtering
+    - [ ] Error states
 - [ ] Mocked GitHub API calls
 - [ ] Mocked git commands
 
