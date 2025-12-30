@@ -50,7 +50,7 @@ pub const Api = struct {
 
         var child = std.process.Child.init(&argv, self.allocator);
         child.stdout_behavior = .Pipe;
-        child.stderr_behavior = .Pipe;
+        child.stderr_behavior = .Ignore; // Ignore stderr to prevent deadlock if buffer fills
 
         try child.spawn();
 

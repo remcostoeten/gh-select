@@ -12,11 +12,21 @@ pub const Cache = struct {
     ttl_seconds: i64,
 
     pub fn init(allocator: std.mem.Allocator) Cache {
+        // Default TTL: 30 minutes (1800 seconds)
+        // Can be overridden by GH_SELECT_CACHE_TTL env var (in hours)
+        var ttl: i64 = 1800;
+        
+        if (std.posix.getenv("GH_SELECT_CACHE_TTL")) |ttl_str| {
+            if (std.fmt.parseInt(i64, ttl_str, 10)) |hours| {
+                ttl = hours * 3600; // Convert hours to seconds
+            } else |_| {
+                // Invalid value, use default
+            }
+        }
+        
         return .{
             .allocator = allocator,
-            // Default TTL: 30 minutes (1800 seconds)
-            // Can be overridden by GH_SELECT_CACHE_TTL env var
-            .ttl_seconds = 1800, 
+            .ttl_seconds = ttl,
         };
     }
 
@@ -42,7 +52,12 @@ pub const Cache = struct {
         const cache_file_path = try paths.getCacheFile(self.allocator);
         defer self.allocator.free(cache_file_path);
 
-        const file = std.fs.openFileAbsolute(cache_file_path, .{}) catch {
+        const file = std.fs.openFileAbsolute(cache_file_path, .{}) catch |err| {
+            // FileNotFound means cache doesn't exist yet - treat as expired
+            if (err == error.FileNotFound) {
+                return errors.GhSelectError.CacheExpired;
+            }
+            // Other errors are actual read failures
             return errors.GhSelectError.CacheReadFailed;
         };
         defer file.close();

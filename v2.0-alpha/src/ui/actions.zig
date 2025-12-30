@@ -4,11 +4,26 @@ const std = @import("std");
 const types = @import("../core/types.zig");
 
 pub fn executeAction(allocator: std.mem.Allocator, action: types.Action, repo: types.Repository) !void {
+    const stderr = std.io.getStdErr().writer();
+    
     switch (action) {
         .clone => {
             const argv = [_][]const u8{ "gh", "repo", "clone", repo.nameWithOwner };
             var child = std.process.Child.init(&argv, allocator);
-            _ = try child.spawnAndWait();
+            const result = try child.spawnAndWait();
+            
+            switch (result) {
+                .Exited => |code| {
+                    if (code != 0) {
+                        try stderr.print("\nError: Clone failed with exit code {d}\n", .{code});
+                        return error.CloneFailed;
+                    }
+                },
+                else => {
+                    try stderr.print("\nError: Clone process terminated abnormally\n", .{});
+                    return error.CloneFailed;
+                },
+            }
         },
         .copy_name => {
             try copyToClipboard(allocator, repo.nameWithOwner);
@@ -21,7 +36,20 @@ pub fn executeAction(allocator: std.mem.Allocator, action: types.Action, repo: t
         .open_browser => {
             const argv = [_][]const u8{ "gh", "repo", "view", "--web", repo.nameWithOwner };
             var child = std.process.Child.init(&argv, allocator);
-            _ = try child.spawnAndWait();
+            const result = try child.spawnAndWait();
+            
+            switch (result) {
+                .Exited => |code| {
+                    if (code != 0) {
+                        try stderr.print("\nError: Failed to open browser (exit code {d})\n", .{code});
+                        return error.OpenBrowserFailed;
+                    }
+                },
+                else => {
+                    try stderr.print("\nError: Browser process terminated abnormally\n", .{});
+                    return error.OpenBrowserFailed;
+                },
+            }
         },
         .show_name => {
             const stdout = std.io.getStdOut().writer();

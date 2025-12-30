@@ -127,8 +127,30 @@ pub const Tui = struct {
         try self.writer.print("\x1b[2J\x1b[H", .{});
     }
 
+    /// Get terminal size using TIOCGWINSZ ioctl
+    /// Falls back to 24x80 if ioctl fails
     pub fn getTermSize(self: *Tui) !struct { rows: usize, cols: usize } {
         _ = self;
+        
+        // winsize struct layout for TIOCGWINSZ
+        const Winsize = extern struct {
+            ws_row: u16,
+            ws_col: u16,
+            ws_xpixel: u16,
+            ws_ypixel: u16,
+        };
+        
+        var ws: Winsize = undefined;
+        const TIOCGWINSZ: u32 = 0x5413; // Linux value
+        
+        const stdout = std.io.getStdOut();
+        const result = std.posix.system.ioctl(stdout.handle, TIOCGWINSZ, @intFromPtr(&ws));
+        
+        if (result == 0 and ws.ws_row > 0 and ws.ws_col > 0) {
+            return .{ .rows = ws.ws_row, .cols = ws.ws_col };
+        }
+        
+        // Fallback to default if ioctl fails
         return .{ .rows = 24, .cols = 80 };
     }
 

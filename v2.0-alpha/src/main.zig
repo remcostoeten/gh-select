@@ -41,8 +41,8 @@ pub fn main() !void {
             },
             .no_cache => {
                 try styled_stderr.print("{s}Force refresh enabled{s}\n", .{ style.dim, style.reset });
-                // In a real run, we would set a flag here and continue to runInteractive
-                // For now, let's just proceed to interactive
+                try runInteractive(allocator, &styled_stdout, &styled_stderr, true);
+                return;
             },
             .refresh_only => {
                 try refreshCache(allocator, &styled_stdout, &styled_stderr);
@@ -61,7 +61,7 @@ pub fn main() !void {
     }
 
     // Main interactive flow
-    try runInteractive(allocator, &styled_stdout, &styled_stderr);
+    try runInteractive(allocator, &styled_stdout, &styled_stderr, false);
 }
 
 fn showVersion(writer: anytype) !void {
@@ -156,12 +156,24 @@ fn refreshCache(allocator: std.mem.Allocator, stdout: anytype, stderr: anytype) 
     try stdout.print("Cache updated.\n", .{});
 }
 
-fn runInteractive(allocator: std.mem.Allocator, stdout: anytype, stderr: anytype) !void {
+fn runInteractive(allocator: std.mem.Allocator, stdout: anytype, stderr: anytype, force_refresh: bool) !void {
     const gh_api = api.Api.init(allocator);
     const repo_cache = cache.Cache.init(allocator);
 
-    // 1. Try to load from cache
-    var repos_parsed = repo_cache.load() catch |err| switch (err) {
+    // 0. Check GitHub CLI auth first
+    gh_api.checkAuth() catch |err| {
+        try stderr.print("{s}Error:{s} GitHub CLI not authenticated or installed.\n", .{ style.red, style.reset });
+        try stderr.print("{s}Run 'gh auth login' to authenticate.{s}\n", .{ style.dim, style.reset });
+        return err;
+    };
+
+    // 1. Try to load from cache (unless force_refresh)
+    var repos_parsed = if (force_refresh) blk: {
+        try stdout.print("{s}Bypassing cache, fetching fresh data...{s}\n", .{ style.cyan, style.reset });
+        const fresh = try gh_api.fetchRepos();
+        try repo_cache.save(fresh.value);
+        break :blk fresh;
+    } else repo_cache.load() catch |err| switch (err) {
         error.CacheExpired, error.CacheReadFailed => blk: {
             // 2. Fetch fresh if cache miss
             try stdout.print("{s}Fetching repositories...{s}", .{ style.cyan, style.reset });
@@ -171,7 +183,10 @@ fn runInteractive(allocator: std.mem.Allocator, stdout: anytype, stderr: anytype
         },
         else => return err,
     };
-    try stdout.print("{s}Using cached repositories{s}\n", .{ style.dim, style.reset });
+    
+    if (!force_refresh) {
+        try stdout.print("{s}Using cached repositories{s}\n", .{ style.dim, style.reset });
+    }
     defer repos_parsed.deinit();
 
     // 3. Run UI Selector

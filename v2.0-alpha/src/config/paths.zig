@@ -41,12 +41,13 @@ pub fn getCacheFile(allocator: std.mem.Allocator) ![]u8 {
     return try std.fmt.allocPrint(allocator, "{s}/repos.json", .{cache_dir});
 }
 
-/// Ensure the cache directory exists
+/// Ensure the cache directory exists, creating parent dirs if needed
 pub fn ensureCacheDir(allocator: std.mem.Allocator) !void {
     const cache_dir = try getCacheDir(allocator);
     defer allocator.free(cache_dir);
     
-    std.fs.makeDirAbsolute(cache_dir) catch |err| {
+    // Use makePath to create parent directories recursively
+    std.fs.makePath(std.fs.cwd(), cache_dir) catch |err| {
         if (err != error.PathAlreadyExists) {
             return err;
         }

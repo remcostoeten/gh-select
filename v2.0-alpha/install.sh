@@ -372,8 +372,20 @@ action_check_updates() {
     log_info "Checking for updates from ${REPO_URL}..."
     echo ""
     
+    # Detect the default branch (main or master)
+    local default_branch
+    default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@') || true
+    if [[ -z "$default_branch" ]]; then
+        # Fallback: try 'main' first, then 'master'
+        if git show-ref --verify --quiet refs/remotes/origin/main 2>/dev/null; then
+            default_branch="main"
+        else
+            default_branch="master"
+        fi
+    fi
+    
     # Fetch latest
-    if ! git fetch origin master --quiet 2>/dev/null; then
+    if ! git fetch origin "$default_branch" --quiet 2>/dev/null; then
         log_error "Failed to fetch from remote. Are you in the git repository?"
         press_any_key
         return 1
@@ -382,7 +394,7 @@ action_check_updates() {
     # Check for differences
     local local_commit remote_commit
     local_commit=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
-    remote_commit=$(git rev-parse origin/master 2>/dev/null || echo "unknown")
+    remote_commit=$(git rev-parse "origin/$default_branch" 2>/dev/null || echo "unknown")
     
     if [[ "$local_commit" == "$remote_commit" ]]; then
         log_success "You are up to date!"
@@ -396,12 +408,12 @@ action_check_updates() {
         
         # Show diff summary
         log_info "Changes:"
-        git --no-pager diff --stat HEAD..origin/master 2>/dev/null | head -10 || true
+        git --no-pager diff --stat "HEAD..origin/$default_branch" 2>/dev/null | head -10 || true
         echo ""
         
         if confirm "Pull latest changes?" "y"; then
             echo ""
-            if git pull origin master; then
+            if git pull origin "$default_branch"; then
                 log_success "Updated successfully!"
             else
                 log_error "Pull failed. You may have local changes."
@@ -493,10 +505,10 @@ main() {
         case "$key" in
             # Arrow keys
             $'\x1b[A') # Up
-                (( SELECTED_INDEX > 0 )) && (( SELECTED_INDEX-- ))
+                (( SELECTED_INDEX > 0 )) && (( SELECTED_INDEX-- )) || true
                 ;;
             $'\x1b[B') # Down
-                (( SELECTED_INDEX < ${#FILTERED_INDICES[@]} - 1 )) && (( SELECTED_INDEX++ ))
+                (( SELECTED_INDEX < ${#FILTERED_INDICES[@]} - 1 )) && (( SELECTED_INDEX++ )) || true
                 ;;
             
             # Number keys (1-6)

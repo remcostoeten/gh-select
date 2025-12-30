@@ -1,6 +1,7 @@
 # Zig build artifacts
 .zig-cache/
 zig-out/
+/gh-select
 
 # macOS
 .DS_Store

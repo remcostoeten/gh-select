@@ -68,7 +68,7 @@ This document is the **internal, Git-driven spec** for the migration and develop
 - [ ] Dry-run support
 - [ ] Scope/permission checks
 
-### 2. Repository Discovery & Search
+### Phase 3: Repository Discovery & Search
 - [ ] Search-first workflow
 - [ ] Smart ranking (stars, last updated, name match)
 - [ ] Filters (owner, language, topics)

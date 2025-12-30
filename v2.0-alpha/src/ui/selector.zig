@@ -128,7 +128,12 @@ pub const Selector = struct {
         
         var tui_engine = try tui.Tui.init(stdout_file);
         try tui_engine.enableRawMode();
-        defer tui_engine.disableRawMode() catch {};
+        defer {
+            // Ensure terminal is restored, log error if restore fails
+            tui_engine.disableRawMode() catch |err| {
+                std.io.getStdErr().writer().print("Warning: Failed to restore terminal mode: {any}\n", .{err}) catch {};
+            };
+        }
 
         while (true) {
             // Buffer the cleared frame
@@ -148,7 +153,13 @@ pub const Selector = struct {
             // Layout Calculations
             const list_start_row = 2;
             const status_height = 3;
-            var visible_rows = term_height - list_start_row - status_height;
+            const min_required = list_start_row + status_height + 1;
+            
+            // Guard against terminal too small / underflow
+            var visible_rows: usize = if (term_height > min_required) 
+                term_height - list_start_row - status_height 
+            else 
+                1; // Minimum 1 row to display something
             if (visible_rows > term_height) visible_rows = 10;
 
             const half_width = term_width / 2;
@@ -276,8 +287,10 @@ pub const Selector = struct {
             try stdout.print("{s}─{s}", .{ style.tn_comment, style.reset });
             
             try tui_engine.setCursor(footer_row + 1, 0);
+            // Fix counter display: show 0/0 when no matches, otherwise show 1-indexed position
+            const display_idx: usize = if (total_matches == 0) 0 else self.selected_index + 1;
             try stdout.print("{s}{d}/{d} {s}Selections: Enter | Quit: Esc/q{s}", .{ 
-                style.tn_cyan, self.selected_index + 1, total_matches,
+                style.tn_cyan, display_idx, total_matches,
                 style.tn_comment, style.reset 
             });
             try tui_engine.setCursor(footer_row + 2, 0);
@@ -327,13 +340,9 @@ pub const Selector = struct {
                             try self.updateFilter();
                         }
                     } else {
-                        if (c != 'w' and c != 'r' and c != 'o') {
-                            try self.query.append(c);
-                            try self.updateFilter();
-                        } else {
-                             try self.query.append(c);
-                             try self.updateFilter();
-                        }
+                        // No matches - still add character to query for searching
+                        try self.query.append(c);
+                        try self.updateFilter();
                     }
                 },
                 .backspace => {
