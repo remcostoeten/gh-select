@@ -1,8 +1,25 @@
 # Changelog
 
-All notable changes to gh-select are documented here.
+All notable changes to this project will be documented in this file.
 
-## [Unreleased] - 2025-12-27
+## [2.0.0-alpha.1] - 2025-12-28
+
+### 🚀 Rewrite to Zig
+- Complete rewrite of `gh-select` from Bash to Zig for improved performance, portability, and maintainability.
+- **Zero Dependencies**: Removed external runtime dependencies (jq, fzf). Now runs as a standalone binary.
+- **Custom TUI**: Implemented a lightweight, native Terminal User Interface for repository selection.
+- **Performance**: Instant startup time compared to bash script overhead.
+- **Caching**: Improved caching mechanism with XDG compliance and robust TTL handling.
+
+### Added
+- `--refresh-only` (-r) flag to strictly refresh the cache without entering interactive mode.
+- Native implementation of GitHub API client using `gh` CLI for authentication and data fetching.
+- XDG Base Directory support for config and cache (`XDG_CACHE_HOME`, `XDG_CONFIG_HOME`).
+
+### Changed
+- Archived legacy Bash version 1.0.4 to `v1.0/` directory.
+
+## [1.0.4] - 2024-12-27
 
 ### Added
 - **Cache system** with 30-minute TTL (12x faster startup)
