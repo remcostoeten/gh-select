@@ -3,17 +3,17 @@
 const std = @import("std");
 const types = @import("../core/types.zig");
 
-fn printToStdout(comptime fmt: []const u8, args: anytype) !void {
-    const stdout_file = std.fs.File{ .handle = std.posix.STDOUT_FILENO };
-    var buf: [1024]u8 = undefined;
-    var writer = stdout_file.writer(&buf);
-    try writer.interface.print(fmt, args);
-    try writer.interface.flush();
+/// Version-safe print helper for Zig 0.15.2
+fn print(file: std.fs.File, comptime fmt: []const u8, args: anytype) !void {
+    const s = try std.fmt.allocPrint(std.heap.page_allocator, fmt, args);
+    defer std.heap.page_allocator.free(s);
+    try file.writeAll(s);
 }
 
 pub fn executeAction(allocator: std.mem.Allocator, action: types.Action, repo: types.Repository) !void {
-    const stderr = std.io.getStdErr().writer();
-    
+    const stderr_file = std.fs.File{ .handle = std.posix.STDERR_FILENO };
+    const stdout_file = std.fs.File{ .handle = std.posix.STDOUT_FILENO };
+
     switch (action) {
         .clone => {
             const argv = [_][]const u8{ "gh", "repo", "clone", repo.nameWithOwner };
@@ -23,12 +23,12 @@ pub fn executeAction(allocator: std.mem.Allocator, action: types.Action, repo: t
             switch (result) {
                 .Exited => |code| {
                     if (code != 0) {
-                        try stderr.print("\nError: Clone failed with exit code {d}\n", .{code});
+                        try print(stderr_file, "\nError: Clone failed with exit code {d}\n", .{code});
                         return error.CloneFailed;
                     }
                 },
                 else => {
-                    try stderr.print("\nError: Clone process terminated abnormally\n", .{});
+                    try print(stderr_file, "\nError: Clone process terminated abnormally\n", .{});
                     return error.CloneFailed;
                 },
             }
@@ -49,23 +49,25 @@ pub fn executeAction(allocator: std.mem.Allocator, action: types.Action, repo: t
             switch (result) {
                 .Exited => |code| {
                     if (code != 0) {
-                        try stderr.print("\nError: Failed to open browser (exit code {d})\n", .{code});
+                        try print(stderr_file, "\nError: Failed to open browser (exit code {d})\n", .{code});
                         return error.OpenBrowserFailed;
                     }
                 },
                 else => {
-                    try stderr.print("\nError: Browser process terminated abnormally\n", .{});
+                    try print(stderr_file, "\nError: Browser process terminated abnormally\n", .{});
                     return error.OpenBrowserFailed;
                 },
             }
         },
         .show_name => {
-            try printToStdout("{s}\n", .{repo.nameWithOwner});
+            try print(stdout_file, "{s}\n", .{repo.nameWithOwner});
         },
     }
 }
 
 fn copyToClipboard(allocator: std.mem.Allocator, text: []const u8) !void {
+    const stdout_file = std.fs.File{ .handle = std.posix.STDOUT_FILENO };
+    
     // Try list of clipboard commands
     const commands = [_][]const []const u8{
         &[_][]const u8{ "pbcopy" },                  // macOS
@@ -87,12 +89,12 @@ fn copyToClipboard(allocator: std.mem.Allocator, text: []const u8) !void {
                 stdin.close();
             }
             _ = child.wait() catch continue;
-            try printToStdout("\nCopied to clipboard!\n", .{});
+            try print(stdout_file, "\nCopied to clipboard!\n", .{});
             return;
         } else |_| {
             continue;
         }
     }
     
-    try printToStdout("\nError: No clipboard tool found (pbcopy, wl-copy, xclip, clip.exe).\n", .{});
+    try print(stdout_file, "\nError: No clipboard tool found (pbcopy, wl-copy, xclip, clip.exe).\n", .{});
 }

@@ -153,8 +153,8 @@ pub const Tui = struct {
         var ws: Winsize = undefined;
         const TIOCGWINSZ: u32 = 0x5413; // Linux value
         
-        const stdout = std.io.getStdOut();
-        const result = std.posix.system.ioctl(stdout.handle, TIOCGWINSZ, @intFromPtr(&ws));
+        const stdout_handle = std.posix.STDOUT_FILENO;
+        const result = std.posix.system.ioctl(stdout_handle, TIOCGWINSZ, @intFromPtr(&ws));
         
         if (result == 0 and ws.ws_row > 0 and ws.ws_col > 0) {
             return .{ .rows = ws.ws_row, .cols = ws.ws_col };
@@ -166,9 +166,8 @@ pub const Tui = struct {
 
     pub fn setCursor(self: *Tui, row: usize, col: usize) !void {
        var buf: [64]u8 = undefined;
-       var w = self.file.writer(&buf);
-       try w.interface.print("\x1b[{d};{d}H", .{ row + 1, col + 1 });
-       try w.interface.flush();
+       const s = try std.fmt.bufPrint(&buf, "\x1b[{d};{d}H", .{ row + 1, col + 1 });
+       try self.file.writeAll(s);
     }
 
     pub fn writeSpaces(self: *Tui, count: usize) !void {

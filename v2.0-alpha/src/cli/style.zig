@@ -62,18 +62,18 @@ pub const StyledWriter = struct {
     }
 
     pub fn print(self: *StyledWriter, comptime fmt: []const u8, args: anytype) !void {
-        var buf: [4096]u8 = undefined;
-        var w = self.file.writer(&buf);
-        try w.interface.print(fmt, args);
-        try w.interface.flush();
+        // Use an allocator-based print for maximum compatibility with Zig versions
+        // We'll use a fixed buffer allocator if we want to avoid heap, but GPA is fine here
+        const s = try std.fmt.allocPrint(std.heap.page_allocator, fmt, args);
+        defer std.heap.page_allocator.free(s);
+        try self.file.writeAll(s);
     }
 
     pub fn styled(self: *StyledWriter, style_code: []const u8, text: []const u8) !void {
         if (self.colors) {
-            var buf: [4096]u8 = undefined;
-            var w = self.file.writer(&buf);
-            try w.interface.print("{s}{s}{s}", .{ style_code, text, reset });
-            try w.interface.flush();
+            const s = try std.fmt.allocPrint(std.heap.page_allocator, "{s}{s}{s}", .{ style_code, text, reset });
+            defer std.heap.page_allocator.free(s);
+            try self.file.writeAll(s);
         } else {
             try self.file.writeAll(text);
         }

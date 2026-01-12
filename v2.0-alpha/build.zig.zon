@@ -1,5 +1,6 @@
 .{
-    .name = "gh-select",
+    .fingerprint = 0xf2a891f06cba154b,
+    .name = .gh_select,
     .version = "2.0.0-alpha.1",
     .minimum_zig_version = "0.13.0",
     .paths = .{

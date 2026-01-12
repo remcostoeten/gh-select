@@ -160,7 +160,6 @@ fn runInteractive(allocator: std.mem.Allocator, stdout: anytype, stderr: anytype
     const gh_api = api.Api.init(allocator);
     const repo_cache = cache.Cache.init(allocator);
 
-<<<<<<<< HEAD:v2.0-alpha/src/main.zig
     // 0. Check GitHub CLI auth first
     gh_api.checkAuth() catch |err| {
         try stderr.print("{s}Error:{s} GitHub CLI not authenticated or installed.\n", .{ style.red, style.reset });
@@ -175,16 +174,6 @@ fn runInteractive(allocator: std.mem.Allocator, stdout: anytype, stderr: anytype
         try repo_cache.save(fresh.value);
         break :blk fresh;
     } else repo_cache.load() catch |err| switch (err) {
-========
-    // 0. Check Auth
-    gh_api.checkAuth() catch |err| {
-        try stderr.print("{s}Error:{s} GitHub CLI not authenticated or installed.\n", .{ style.red, style.reset });
-        return err;
-    };
-
-    // 1. Try to load from cache
-    var repos_parsed = repo_cache.load() catch |err| switch (err) {
->>>>>>>> 8cb7599 (build: zig version mvp):v2/src/main.zig
         error.CacheExpired, error.CacheReadFailed => blk: {
             // 2. Fetch fresh if cache miss
             try stdout.print("{s}Fetching repositories...{s}", .{ style.cyan, style.reset });

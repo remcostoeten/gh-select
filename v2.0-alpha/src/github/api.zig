@@ -41,44 +41,26 @@ pub const Api = struct {
     /// Fetch repositories using gh repo list
     /// Returns a parsed JSON object that must be deinitialized by the caller
     pub fn fetchRepos(self: Api) !std.json.Parsed([]types.Repository) {
-        // gh repo list --json nameWithOwner,description,isPrivate --limit 1000
+        // gh repo list --json nameWithOwner,description,homepageUrl,isPrivate --limit 1000
         const argv = [_][]const u8{
             "gh", "repo", "list",
             "--json", "nameWithOwner,description,homepageUrl,isPrivate",
             "--limit", "1000",
         };
 
-        var child = std.process.Child.init(&argv, self.allocator);
-        child.stdout_behavior = .Pipe;
-        child.stderr_behavior = .Ignore; // Ignore stderr to prevent deadlock if buffer fills
+        const run_result = try std.process.Child.run(.{
+            .allocator = self.allocator,
+            .argv = &argv,
+            .max_output_bytes = 10 * 1024 * 1024,
+        });
+        defer self.allocator.free(run_result.stdout);
+        defer self.allocator.free(run_result.stderr);
 
-        try child.spawn();
-
-        var buf: [4096]u8 = undefined;
-        var reader = child.stdout.?.reader(&buf);
-        
-        var list = std.ArrayList(u8){};
-        errdefer list.deinit(self.allocator);
-        
-        var read_buf: [4096]u8 = undefined;
-        while (true) {
-            var fbs = std.io.fixedBufferStream(&read_buf);
-            var w = fbs.writer();
-            var adapter_buf: [0]u8 = undefined; // Zero length? Or 1?
-            var adapter = w.adaptToNewApi(&adapter_buf);
-            const n = try reader.interface.stream(&adapter.new_interface, @enumFromInt(read_buf.len));
-            if (n == 0) break;
-            try list.appendSlice(self.allocator, read_buf[0..n]);
+        if (run_result.term != .Exited or run_result.term.Exited != 0) {
+            return errors.GhSelectError.GhApiFailed;
         }
-        const json_body = try list.toOwnedSlice(self.allocator);
-        defer self.allocator.free(json_body);
 
-        switch (try child.wait()) {
-            .Exited => |code| {
-                if (code != 0) return errors.GhSelectError.GhApiFailed;
-            },
-            else => return errors.GhSelectError.GhApiFailed,
-        }
+        const json_body = run_result.stdout;
 
         // Parse JSON
         // We use parseFromSlice with duplicate_fields to ensure the result owns its data

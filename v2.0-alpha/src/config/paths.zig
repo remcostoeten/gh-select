@@ -47,7 +47,7 @@ pub fn ensureCacheDir(allocator: std.mem.Allocator) !void {
     defer allocator.free(cache_dir);
     
     // Use makePath to create parent directories recursively
-    std.fs.makePath(std.fs.cwd(), cache_dir) catch |err| {
+    std.fs.cwd().makePath(cache_dir) catch |err| {
         if (err != error.PathAlreadyExists) {
             return err;
         }

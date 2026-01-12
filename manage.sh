@@ -58,7 +58,7 @@ case "$VERSION" in
             exit 1
         fi
 
-        cd v2
+        cd v2.0-alpha
         echo "Using Zig binary: $ZIG_CMD"
         echo "Zig version: $($ZIG_CMD version)"
         
