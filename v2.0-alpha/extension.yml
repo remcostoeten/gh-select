@@ -1,0 +1,4 @@
+name: gh-select
+owner: remcostoeten
+host: github.com
+executable: gh-select
