@@ -54,8 +54,23 @@ pub const Api = struct {
 
         try child.spawn();
 
-        const stdout = child.stdout.?.reader();
-        const json_body = try stdout.readAllAlloc(self.allocator, 10 * 1024 * 1024); // 10MB limit
+        var buf: [4096]u8 = undefined;
+        var reader = child.stdout.?.reader(&buf);
+        
+        var list = std.ArrayList(u8){};
+        errdefer list.deinit(self.allocator);
+        
+        var read_buf: [4096]u8 = undefined;
+        while (true) {
+            var fbs = std.io.fixedBufferStream(&read_buf);
+            var w = fbs.writer();
+            var adapter_buf: [0]u8 = undefined; // Zero length? Or 1?
+            var adapter = w.adaptToNewApi(&adapter_buf);
+            const n = try reader.interface.stream(&adapter.new_interface, @enumFromInt(read_buf.len));
+            if (n == 0) break;
+            try list.appendSlice(self.allocator, read_buf[0..n]);
+        }
+        const json_body = try list.toOwnedSlice(self.allocator);
         defer self.allocator.free(json_body);
 
         switch (try child.wait()) {

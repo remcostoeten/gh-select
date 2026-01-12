@@ -42,8 +42,11 @@ pub const Cache = struct {
         };
         defer file.close();
 
-        const writer = file.writer();
-        try std.json.stringify(repos, .{ .whitespace = .indent_2 }, writer);
+        var buf: [4096]u8 = undefined;
+        var writer = file.writer(&buf);
+        const formatter = std.json.fmt(repos, .{ .whitespace = .indent_2 });
+        try formatter.format(&writer.interface);
+        try writer.interface.flush();
     }
 
     /// Load repositories from cache if valid

@@ -20,8 +20,11 @@ pub const ActionMenu = struct {
     }
 
     pub fn run(self: *ActionMenu, repo: types.Repository) !?types.Action {
-        const stdout = std.io.getStdOut().writer();
-        var tui_engine = try tui.Tui.init(stdout);
+        const stdout_file = std.fs.File{ .handle = std.posix.STDOUT_FILENO };
+        var write_buf: [4096]u8 = undefined;
+        var stdout = stdout_file.writer(&write_buf);
+        
+        var tui_engine = try tui.Tui.init(stdout_file);
         try tui_engine.enableRawMode();
         defer tui_engine.disableRawMode() catch {};
 
@@ -55,10 +58,10 @@ pub const ActionMenu = struct {
 
             // 1. Header showing selected repo
             try tui_engine.setCursor(0, 0);
-            try stdout.print("{s} Selected: {s}{s}{s}\n", .{ 
+            try stdout.interface.print("{s} Selected: {s}{s}{s}\n", .{ 
                 style.tn_comment, style.tn_blue, repo.nameWithOwner, style.reset 
             });
-            try stdout.print("{s} What would you like to do?{s}\n", .{ style.bold, style.reset });
+            try stdout.interface.print("{s} What would you like to do?{s}\n", .{ style.bold, style.reset });
 
             // 2. Options
             const list_start_row = 3;
@@ -75,17 +78,17 @@ pub const ActionMenu = struct {
                 const pad_len = 12 -| titles[i].len;
                 
                 if (is_selected) {
-                    try stdout.print("{s}> {d}. {s}", .{ style.tn_magenta, i + 1, titles[i] });
+                    try stdout.interface.print("{s}> {d}. {s}", .{ style.tn_magenta, i + 1, titles[i] });
                     try tui_engine.writeSpaces(pad_len);
-                    try stdout.print(" {s}-{s} {s}{s}", .{
+                    try stdout.interface.print(" {s}-{s} {s}{s}", .{
                         style.dim, style.reset,
                         descriptions[i],
                         style.reset
                     });
                 } else {
-                    try stdout.print("  {d}. {s}", .{ i + 1, titles[i] });
+                    try stdout.interface.print("  {d}. {s}", .{ i + 1, titles[i] });
                     try tui_engine.writeSpaces(pad_len);
-                    try stdout.print(" {s}-{s} {s}{s}", .{
+                    try stdout.interface.print(" {s}-{s} {s}{s}", .{
                         style.tn_comment, style.reset,
                         descriptions[i], style.reset
                     });
@@ -95,7 +98,9 @@ pub const ActionMenu = struct {
             // 3. Footer
             const footer_row = term_size.rows - 2;
             try tui_engine.setCursor(footer_row, 0);
-            try stdout.print("{s}Use numbers 1-5 or arrows. Enter to select. Esc to quit.{s}", .{ style.tn_comment, style.reset });
+            try stdout.interface.print("{s}Use numbers 1-5 or arrows. Enter to select. Esc to quit.{s}", .{ style.tn_comment, style.reset });
+            
+            try stdout.interface.flush();
 
             // Input
             const key = try tui_engine.readKey();

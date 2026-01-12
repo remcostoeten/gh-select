@@ -21,22 +21,22 @@ pub const Key = union(enum) {
 pub const Tui = struct {
     original_termios: posix.termios,
     in_raw_mode: bool,
-    writer: std.fs.File.Writer,
+    file: std.fs.File,
 
-    pub fn init(writer: std.fs.File.Writer) !Tui {
-        const stdin = std.io.getStdIn();
+    pub fn init(file: std.fs.File) !Tui {
+        const stdin = std.fs.File{ .handle = posix.STDIN_FILENO };
         const original = try posix.tcgetattr(stdin.handle);
         return .{
             .original_termios = original,
             .in_raw_mode = false,
-            .writer = writer,
+            .file = file,
         };
     }
 
     pub fn enableRawMode(self: *Tui) !void {
         if (self.in_raw_mode) return;
         
-        const stdin = std.io.getStdIn();
+        const stdin = std.fs.File{ .handle = std.posix.STDIN_FILENO };
         var raw = self.original_termios;
         
         // input modes: no break, no CR to NL, no parity check, no strip char,
@@ -60,23 +60,25 @@ pub const Tui = struct {
         raw.lflag.ISIG = false;
         
         // control chars - min chars to read and timeout
-        raw.cc[@intFromEnum(posix.V.MIN)] = 0;
-        raw.cc[@intFromEnum(posix.V.TIME)] = 1;
+        raw.cc[@intFromEnum(posix.V.MIN)] = 1;
+        raw.cc[@intFromEnum(posix.V.TIME)] = 0;
         
         try posix.tcsetattr(stdin.handle, .FLUSH, raw);
         self.in_raw_mode = true;
         
         // Switch to alt screen and hide cursor
-        try self.writer.print("\x1b[?1049h\x1b[?25l", .{});
+        // Switch to alt screen and hide cursor
+        try self.file.writeAll("\x1b[?1049h\x1b[?25l");
     }
 
     pub fn disableRawMode(self: *Tui) !void {
         if (!self.in_raw_mode) return;
         
         // Restore cursor and exit alt screen
-        try self.writer.print("\x1b[?25h\x1b[?1049l", .{});
+        // Restore cursor and exit alt screen
+        try self.file.writeAll("\x1b[?25h\x1b[?1049l");
         
-        const stdin = std.io.getStdIn();
+        const stdin = std.fs.File{ .handle = std.posix.STDIN_FILENO };
         try posix.tcsetattr(stdin.handle, .FLUSH, self.original_termios);
         self.in_raw_mode = false;
     }
@@ -84,19 +86,26 @@ pub const Tui = struct {
     /// Read a key from stdin
     pub fn readKey(self: *Tui) !Key {
         _ = self;
-        var buf: [1]u8 = undefined;
-        const stdin = std.io.getStdIn().reader();
         
-        // Non-blocking read loop (since VMIN=0)
-        while (true) {
-            const n = try stdin.read(&buf);
-            if (n == 0) continue;
-            
-            const c = buf[0];
-            
-            if (c == 27) { // Escape sequence
+        var buf: [1]u8 = undefined;
+        // Blocking read (VMIN=1) handles the idle wait efficiently
+        const n = try posix.read(posix.STDIN_FILENO, &buf);
+        if (n == 0) return .unknown;
+        
+        const c = buf[0];
+        
+        if (c == 27) { // Escape sequence
+            // Check if there are more bytes waiting (arrow keys send ESC+[+A/B/C/D)
+            // Use poll to see if data is available immediately
+            var pfds = [_]posix.pollfd{.{ .fd = posix.STDIN_FILENO, .events = posix.POLL.IN, .revents = 0 }};
+            const count = try posix.poll(&pfds, 0);
+
+            if (count > 0) {
                 var seq: [2]u8 = undefined;
-                if (try stdin.read(&seq) < 2) return .escape;
+                // Since poll said data is ready, this shouldn't block long, 
+                // but strictly we should be careful. For ANSI seqs, they come together.
+                const n_seq = try posix.read(posix.STDIN_FILENO, &seq);
+                if (n_seq < 2) return .escape;
                 
                 if (seq[0] == '[') {
                     switch (seq[1]) {
@@ -107,7 +116,8 @@ pub const Tui = struct {
                         else => return .unknown,
                     }
                 }
-                return .escape;
+            }
+            return .escape;
             } else if (c == 13) {
                 return .enter;
             } else if (c == 127) {
@@ -119,12 +129,12 @@ pub const Tui = struct {
             } else {
                 return .{ .char = c };
             }
-        }
+
     }
 
     // Drawing primitives
     pub fn clear(self: *Tui) !void {
-        try self.writer.print("\x1b[2J\x1b[H", .{});
+        try self.file.writeAll("\x1b[2J\x1b[H");
     }
 
     /// Get terminal size using TIOCGWINSZ ioctl
@@ -155,13 +165,16 @@ pub const Tui = struct {
     }
 
     pub fn setCursor(self: *Tui, row: usize, col: usize) !void {
-       try self.writer.print("\x1b[{d};{d}H", .{ row + 1, col + 1 });
+       var buf: [64]u8 = undefined;
+       var w = self.file.writer(&buf);
+       try w.interface.print("\x1b[{d};{d}H", .{ row + 1, col + 1 });
+       try w.interface.flush();
     }
 
     pub fn writeSpaces(self: *Tui, count: usize) !void {
         var i: usize = 0;
         while (i < count) : (i += 1) {
-            try self.writer.print(" ", .{});
+            try self.file.writeAll(" ");
         }
     }
 };

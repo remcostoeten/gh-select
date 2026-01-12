@@ -45,31 +45,37 @@ pub fn colorsEnabled() bool {
     }
     
     // Check if stdout is a TTY
-    const stdout = std.io.getStdOut();
+    const stdout = std.fs.File{ .handle = std.posix.STDOUT_FILENO };
     return std.posix.isatty(stdout.handle);
 }
 
 /// Styled writer that respects NO_COLOR
 pub const StyledWriter = struct {
-    inner: std.fs.File.Writer,
+    file: std.fs.File,
     colors: bool,
 
     pub fn init(file: std.fs.File) StyledWriter {
         return .{
-            .inner = file.writer(),
+            .file = file,
             .colors = colorsEnabled(),
         };
     }
 
     pub fn print(self: *StyledWriter, comptime fmt: []const u8, args: anytype) !void {
-        try self.inner.print(fmt, args);
+        var buf: [4096]u8 = undefined;
+        var w = self.file.writer(&buf);
+        try w.interface.print(fmt, args);
+        try w.interface.flush();
     }
 
     pub fn styled(self: *StyledWriter, style_code: []const u8, text: []const u8) !void {
         if (self.colors) {
-            try self.inner.print("{s}{s}{s}", .{ style_code, text, reset });
+            var buf: [4096]u8 = undefined;
+            var w = self.file.writer(&buf);
+            try w.interface.print("{s}{s}{s}", .{ style_code, text, reset });
+            try w.interface.flush();
         } else {
-            try self.inner.writeAll(text);
+            try self.file.writeAll(text);
         }
     }
 };

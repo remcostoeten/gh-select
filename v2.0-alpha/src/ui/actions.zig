@@ -3,6 +3,14 @@
 const std = @import("std");
 const types = @import("../core/types.zig");
 
+fn printToStdout(comptime fmt: []const u8, args: anytype) !void {
+    const stdout_file = std.fs.File{ .handle = std.posix.STDOUT_FILENO };
+    var buf: [1024]u8 = undefined;
+    var writer = stdout_file.writer(&buf);
+    try writer.interface.print(fmt, args);
+    try writer.interface.flush();
+}
+
 pub fn executeAction(allocator: std.mem.Allocator, action: types.Action, repo: types.Repository) !void {
     const stderr = std.io.getStdErr().writer();
     
@@ -52,15 +60,12 @@ pub fn executeAction(allocator: std.mem.Allocator, action: types.Action, repo: t
             }
         },
         .show_name => {
-            const stdout = std.io.getStdOut().writer();
-            try stdout.print("{s}\n", .{repo.nameWithOwner});
+            try printToStdout("{s}\n", .{repo.nameWithOwner});
         },
     }
 }
 
 fn copyToClipboard(allocator: std.mem.Allocator, text: []const u8) !void {
-    const stdout = std.io.getStdOut().writer();
-    
     // Try list of clipboard commands
     const commands = [_][]const []const u8{
         &[_][]const u8{ "pbcopy" },                  // macOS
@@ -82,12 +87,12 @@ fn copyToClipboard(allocator: std.mem.Allocator, text: []const u8) !void {
                 stdin.close();
             }
             _ = child.wait() catch continue;
-            try stdout.print("\nCopied to clipboard!\n", .{});
+            try printToStdout("\nCopied to clipboard!\n", .{});
             return;
         } else |_| {
             continue;
         }
     }
     
-    try stdout.print("\nError: No clipboard tool found (pbcopy, wl-copy, xclip, clip.exe).\n", .{});
+    try printToStdout("\nError: No clipboard tool found (pbcopy, wl-copy, xclip, clip.exe).\n", .{});
 }
