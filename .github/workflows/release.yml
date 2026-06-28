@@ -26,6 +26,6 @@ jobs:
         uses: cli/gh-extension-precompile@v2
         with:
           go_version_file: go.mod
-          ldflags: "-s -w -X main.version=${{ github.ref_name }}"
+          go_build_options: '-trimpath -ldflags=-s -ldflags=-w -ldflags=-X=main.version=${{ github.ref_name }}'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
