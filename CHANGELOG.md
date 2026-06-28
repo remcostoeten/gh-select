@@ -7,8 +7,12 @@ All notable changes to gh-select are documented here.
 ### Changed
 - **Rewritten in Go** as a precompiled `gh` extension (was a Bash script).
   Authentication, REST + GraphQL access via `go-gh`; TUI via Bubble Tea.
-  `fzf` and `jq` are no longer required. The previous shell implementation is
-  kept under `legacy/`.
+  `fzf` and `jq` are no longer required.
+
+### Removed
+- The legacy Bash implementation (`legacy/gh-select.sh`) and its shell
+  installer scripts (`scripts/install.sh`, `scripts/uninstall.sh`), superseded
+  by the Go binary distributed via `gh extension install`.
 
 ### Added
 - **Codebase tree browser** — navigate a repository's full file tree and preview

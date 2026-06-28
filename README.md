@@ -6,11 +6,37 @@ Interactive GitHub repository selector with fuzzy search, codebase preview, and 
 
 ## Installation
 
+### As a `gh` extension (recommended)
+
 ```bash
 gh extension install remcostoeten/gh-select
+gh extension upgrade gh-select   # later, to update
 ```
 
 Precompiled binaries are published per release, so there is nothing to build.
+`gh` downloads the binary matching your OS/arch and runs it as `gh select`.
+
+### Standalone binary (without `gh`)
+
+Every release also ships plain executables. Grab the one for your platform from
+the [Releases page](https://github.com/remcostoeten/gh-select/releases), then:
+
+```bash
+chmod +x gh-select_*        # macOS/Linux
+mv gh-select_* /usr/local/bin/gh-select
+gh-select                   # run directly
+```
+
+It still uses `gh` for authentication under the hood, so `gh auth login` must
+have been run once.
+
+### From source (Go)
+
+```bash
+go install github.com/remcostoeten/gh-select@latest
+```
+
+Installs the latest tagged version to `$(go env GOPATH)/bin` as `gh-select`.
 
 ### Requirements
 
