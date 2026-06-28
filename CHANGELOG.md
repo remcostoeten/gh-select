@@ -2,52 +2,27 @@
 
 All notable changes to gh-select are documented here.
 
-## [Unreleased] - 2025-12-27
+## [Unreleased]
+
+### Changed
+- **Rewritten in Go** as a precompiled `gh` extension (was a Bash script).
+  Authentication, REST + GraphQL access via `go-gh`; TUI via Bubble Tea.
+  `fzf` and `jq` are no longer required. The previous shell implementation is
+  kept under `legacy/`.
 
 ### Added
-- **Cache system** with 30-minute TTL (12x faster startup)
-- **Interactive spellcheck** - typos prompt "Did you mean X? [Y/n]"
-- `--no-cache` flag to bypass cache and fetch fresh data
-- Auto-generated argument system (define once, get --long, -short, bare forms)
-
-### Fixed
-- Fixed pagination bug that fetched 2000 repos instead of actual count
+- **Codebase tree browser** — navigate a repository's full file tree and preview
+  file contents without cloning (single recursive tree API call).
+- **Partial / sparse clone** — multi-select folders and clone only those via
+  `git clone --filter=blob:none --sparse` + cone-mode sparse-checkout.
+- Type-to-filter (`/`) within the tree browser for large repositories.
+- Stale-while-revalidate cache: the list renders instantly and refreshes in the
+  background, with a loading spinner during fetches.
+- `gh select doctor` — checks for git, gh, and authentication.
 
 ### Performance
-- Cold start: ~3s (API fetch)
-- Cached: ~0.24s (12x faster)
-
----
-
-## [2.2.0] - 2025-07-18
-
-### Changed
-- Clean up repository - remove bloat and organize structure
-
----
-
-## [2.1.0] - 2025-07-18
-
-### Changed
-- Clean up README - remove bloat and make it concise
-
----
-
-## [2.0.0] - 2025-07-18
-
-### Changed
-- Refactor to meet GitHub CLI extension requirements
-
----
-
-## [1.1.0] - 2025-07-05
-
-### Added
-- Visual specifications
-- GitHub Action to auto-regenerate OG image
-- Pillow script and Open Graph image
-
----
+- Repository fetch drops the expensive `defaultBranchRef` GraphQL field
+  (~3.5s/page → ~1.4s/page); tree/clone default to HEAD instead.
 
 ## [1.0.2] - 2025-07-05
 

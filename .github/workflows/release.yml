@@ -3,79 +3,29 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
   contents: write
 
 jobs:
   release:
-    name: Create Release
+    name: Build & publish precompiled binaries
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
         with:
-          fetch-depth: 0
+          go-version-file: go.mod
 
-      - name: Get version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Extract changelog for this version
-        id: changelog
-        run: |
-          # Extract changelog section for this version
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          # Remove 'v' prefix if present for matching
-          VERSION_NUM="${VERSION#v}"
-          
-          # Extract the section between this version and the next
-          CHANGELOG=$(sed -n "/## \[${VERSION_NUM}\]/,/## \[/p" CHANGELOG.md | sed '$d' | tail -n +2)
-          
-          if [ -z "$CHANGELOG" ]; then
-            CHANGELOG="See CHANGELOG.md for details."
-          fi
-          
-          # Write to file to handle multiline
-          echo "$CHANGELOG" > release_notes.md
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+      # Cross-compiles gh-select for every supported platform and attaches the
+      # binaries to the release so `gh extension install` can fetch the right
+      # one. Builds with -X main.version=<tag> for accurate `--version`.
+      - name: Build & release
+        uses: cli/gh-extension-precompile@v2
         with:
-          body_path: release_notes.md
-          files: |
-            gh-select
-            LICENSE
-            README.md
-          draft: false
-          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+          go_version_file: go.mod
+          ldflags: "-s -w -X main.version=${{ github.ref_name }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # Future: Zig cross-compilation
-  # build-zig:
-  #   name: Build Zig (${{ matrix.target }})
-  #   runs-on: ${{ matrix.os }}
-  #   strategy:
-  #     matrix:
-  #       include:
-  #         - target: x86_64-linux
-  #           os: ubuntu-latest
-  #         - target: x86_64-macos
-  #           os: macos-latest
-  #         - target: aarch64-macos
-  #           os: macos-latest
-  #         - target: x86_64-windows
-  #           os: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: goto-bus-stop/setup-zig@v2
-  #       with:
-  #         version: 0.13.0
-  #     - name: Build
-  #       run: zig build -Doptimize=ReleaseSafe -Dtarget=${{ matrix.target }}
-  #     - name: Upload artifact
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: gh-select-${{ matrix.target }}
-  #         path: zig-out/bin/gh-select*

@@ -162,7 +162,7 @@ elif [ "$USER_REMOVED" = true ] || [ "$GLOBAL_REMOVED" = true ]; then
     fi
     log ""
     log "💡 To reinstall:"
-    log "   curl -sSL https://raw.githubusercontent.com/remcostoeten/gh-cli-extension-easy-copy-clone-repository/master/install.sh | bash"
+    log "   gh extension install remcostoeten/gh-select"
 else
     log "ℹ️  No installations were removed"
 fi
