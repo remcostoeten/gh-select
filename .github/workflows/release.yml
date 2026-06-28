@@ -15,10 +15,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
       # Cross-compiles gh-select for every supported platform and attaches the
       # binaries to the release so `gh extension install` can fetch the right
       # one. Builds with -X main.version=<tag> for accurate `--version`.
