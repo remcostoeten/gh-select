@@ -105,13 +105,13 @@ func (p *pickerModel) selection() string {
 	return rows[p.cursor]
 }
 
-// context is the header's right-hand text: a count and the live query.
+// context is the header's right-hand text: a branch count. The live query lives
+// in the search box rendered below the header.
 func (p *pickerModel) context() string {
 	if p.query == "" {
 		return fmt.Sprintf("%d branches", len(p.all))
 	}
-	return fmt.Sprintf("%d/%d  %s", len(p.rows()), len(p.all),
-		selectedStyle.Render("search: "+p.query+"_"))
+	return fmt.Sprintf("%d/%d branches", len(p.rows()), len(p.all))
 }
 
 // body renders the visible window of rows for innerH body lines.

@@ -4,7 +4,6 @@ package ui
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -130,7 +129,7 @@ func NewApp(client *gh.Client, initial []gh.Repo, refresh bool, saveFn func([]gh
 		width:   80,
 		height:  24,
 	}
-	a.list = newRepoList(initial, a.width, a.height-chromeLines)
+	a.list = newRepoList(initial, a.width, a.height-chromeLines-searchBoxLines)
 	return a
 }
 
@@ -276,7 +275,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		a.width, a.height = msg.Width, msg.Height
-		a.list.SetSize(msg.Width, msg.Height-chromeLines)
+		a.list.SetSize(msg.Width, msg.Height-chromeLines-searchBoxLines)
 		if a.tree != nil {
 			a.tree.setSize(msg.Width, msg.Height)
 		}
@@ -445,40 +444,39 @@ func (a *App) View() string {
 	}
 }
 
-// listContext is the right-hand header text for the repo list: the active scope,
-// a result count, and the live search query.
+// listContext is the right-hand header text for the repo list: the active scope
+// and a result count. The live query itself lives in the search box below.
 func (a *App) listContext() string {
-	var b strings.Builder
 	if a.scope == scopeGitHub {
-		b.WriteString(contextStyle.Render("GitHub"))
-		b.WriteString(dimStyle.Render(" · "))
 		if a.query == "" {
-			b.WriteString(dimStyle.Render("type a user/repo"))
-		} else {
-			fmt.Fprintf(&b, "%d", len(a.list.Items()))
-			b.WriteString(dimStyle.Render(" · "))
-			b.WriteString(selectedStyle.Render("search: " + a.query + "_"))
+			return contextStyle.Render("GitHub")
 		}
-		return b.String()
+		return contextStyle.Render("GitHub") + dimStyle.Render(fmt.Sprintf(" · %d", len(a.list.Items())))
 	}
-
-	b.WriteString(dimStyle.Render("My repos · "))
 	if a.query == "" {
-		fmt.Fprintf(&b, "%d", len(a.repos))
-	} else {
-		fmt.Fprintf(&b, "%d/%d", len(a.list.Items()), len(a.repos))
-		b.WriteString("  ")
-		b.WriteString(selectedStyle.Render("search: " + a.query + "_"))
+		return dimStyle.Render(fmt.Sprintf("My repos · %d", len(a.repos)))
 	}
-	return b.String()
+	return dimStyle.Render("My repos · ") + fmt.Sprintf("%d/%d", len(a.list.Items()), len(a.repos))
 }
 
-// viewList renders the repo list body plus any background-search/refresh status.
-// When the list is empty it substitutes a context-appropriate line for the
-// list's blunt built-in "No items." placeholder.
+// searchBox renders the always-on search field for the repo list, with a
+// scope-appropriate placeholder when nothing has been typed yet.
+func (a *App) searchBox() string {
+	placeholder := "filter your repos…"
+	if a.scope == scopeGitHub {
+		placeholder = "search GitHub — e.g. torvalds/linux"
+	}
+	return inputBox(searchField(a.query, placeholder), a.width)
+}
+
+// viewList renders the search box, the repo list body, and any background
+// search/refresh status. When the list is empty it substitutes a
+// context-appropriate line for the list's blunt built-in "No items." placeholder.
 func (a *App) viewList() string {
+	box := a.searchBox()
+
 	if a.searching {
-		return "\n  " + a.spinner.View() + statusStyle.Render(" Searching GitHub…")
+		return box + "\n  " + a.spinner.View() + statusStyle.Render(" Searching GitHub…")
 	}
 	if len(a.list.Items()) == 0 {
 		var msg string
@@ -492,10 +490,10 @@ func (a *App) viewList() string {
 		default:
 			msg = dimStyle.Render("no repositories")
 		}
-		return "\n  " + msg
+		return box + "\n  " + msg
 	}
 
-	view := a.list.View()
+	view := box + "\n" + a.list.View()
 	if a.loading {
 		view += "\n" + a.spinner.View() + statusStyle.Render(" Refreshing repositories…")
 	} else if a.status != "" {
@@ -512,8 +510,9 @@ func (a *App) viewBranches() string {
 		return compose(a.width, a.height, a.version, context, body, pickerFooter)
 	}
 	context = a.selected.NameWithOwner + dimStyle.Render("  ·  ") + a.picker.context()
-	return compose(a.width, a.height, a.version, context,
-		a.picker.body(a.height-chromeLines), pickerFooter)
+	box := inputBox(searchField(a.picker.query, "filter branches…"), a.width)
+	body := box + "\n" + a.picker.body(a.height-chromeLines-searchBoxLines)
+	return compose(a.width, a.height, a.version, context, body, pickerFooter)
 }
 
 func (a *App) listFooter() string {

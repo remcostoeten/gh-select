@@ -31,6 +31,38 @@ func box(content string, width int) string {
 		Render(truncate(content, inner))
 }
 
+// searchBoxLines is the height the always-on search field occupies (a bordered
+// box, like the header/footer). Screens that render it must shrink their body
+// by this many rows so everything still fits within the chrome.
+const searchBoxLines = 3
+
+// inputBox wraps content in a rounded border with a focus-colored edge — the
+// always-on search field. Like box() it stays exactly three rows tall.
+func inputBox(content string, width int) string {
+	if width < 4 {
+		width = 4
+	}
+	inner := width - 4 // 2 border cells + 2 padding cells
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colHL).
+		Padding(0, 1).
+		Width(width - 2).
+		MaxHeight(3).
+		Render(truncate(content, inner))
+}
+
+// searchField builds the search input's content line: a magnifier prompt, then
+// either the typed query (with a block cursor) or a dim placeholder when empty.
+func searchField(query, placeholder string) string {
+	prompt := keyStyle.Render("🔍 ")
+	cursor := selectedStyle.Render("▏")
+	if query == "" {
+		return prompt + dimStyle.Render(placeholder) + cursor
+	}
+	return prompt + lipgloss.NewStyle().Foreground(colFg).Render(query) + cursor
+}
+
 // truncate clips an ANSI-styled string to w display cells, adding an ellipsis
 // when it overflows. ANSI-aware so style escapes aren't miscounted or severed.
 func truncate(s string, w int) string {
