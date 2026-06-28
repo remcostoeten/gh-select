@@ -26,6 +26,11 @@ build/
 *.tar.gz
 *.zip
 
+# Compiled Go binary (built by `go build -o gh-select .` / CI release)
+/gh-select
+*.test
+*.out
+
 # Logs
 *.log
 logs/

@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master, main, feature/*]
+    branches: [master, main, "feat/*", "feature/*"]
   pull_request:
     branches: [master, main]
 
@@ -14,45 +14,22 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y fzf jq
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
 
-      - name: Install dependencies (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install fzf jq
+      - name: Build
+        run: go build -o gh-select .
 
-      - name: Make executable
-        run: chmod +x ./gh-select
+      - name: Vet
+        run: go vet ./...
 
-      - name: Verify help works
-        run: echo q | ./gh-select --help
+      - name: Test
+        run: go test ./...
 
-      - name: Verify version works
+      - name: Verify version flag
         run: ./gh-select --version
-
-      - name: Check syntax (shellcheck)
-        uses: ludeeus/action-shellcheck@master
-        with:
-          scandir: '.'
-          ignore_paths: 'v1.0'
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Run ShellCheck
-        uses: ludeeus/action-shellcheck@master
-        with:
-          scandir: '.'
-          ignore_paths: 'v1.0'
-          severity: warning
