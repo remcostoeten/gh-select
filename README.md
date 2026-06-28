@@ -1,8 +1,19 @@
 # gh-select
 
-Interactive GitHub repository selector with fuzzy search, codebase preview, and **partial (sparse) cloning** — pick only the folders you want.
+A fast `gh` CLI extension to **fuzzy-search your GitHub repositories**, **browse any repo's file tree without cloning**, and **partial (sparse) clone only the folders you want**. Built in Go with a self-contained terminal UI — no `fzf` or `jq` required.
 
 ![gh-select Demo](./assets/gh-select-demo.gif)
+
+`gh select` turns finding, previewing, and cloning GitHub repos into a single keyboard-driven flow in your terminal. Type to filter your repositories from cache (instant), open a repo's codebase tree to preview files via the GitHub API, mark the folders you actually need, and clone just those with a sparse `git` checkout.
+
+## Features
+
+- **Fuzzy repository search** — always-on search box filters your repos as you type, served instantly from cache with background refresh.
+- **Browse before you clone** — navigate any repository's file tree and preview file contents straight from the GitHub API, no download needed.
+- **Partial / sparse clone** — select individual folders and clone only those with `git clone --filter=blob:none --sparse`, saving bandwidth and disk on large monorepos.
+- **Zero extra dependencies** — the TUI and GitHub API client are built in; no `fzf`, no `jq`.
+- **One precompiled binary** — install as a `gh` extension or a standalone binary; nothing to compile.
+- **Quick actions** — clone, copy repo name or URL, and open in browser without leaving the terminal.
 
 ## Installation
 
