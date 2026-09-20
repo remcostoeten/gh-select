@@ -105,23 +105,22 @@ func (p *pickerModel) selection() string {
 	return rows[p.cursor]
 }
 
-// context is the header's right-hand text: a branch count. The live query lives
-// in the search box rendered below the header.
+// context is the branches panel's title: a branch count, narrowed by the query.
 func (p *pickerModel) context() string {
 	if p.query == "" {
-		return fmt.Sprintf("%d branches", len(p.all))
+		return fmt.Sprintf("branches · %d", len(p.all))
 	}
-	return fmt.Sprintf("%d/%d branches", len(p.rows()), len(p.all))
+	return fmt.Sprintf("branches · %d/%d", len(p.rows()), len(p.all))
 }
 
 // body renders the visible window of rows for innerH body lines.
 func (p *pickerModel) body(innerH int) string {
 	rows := p.rows()
 	if len(rows) == 0 {
-		return "\n  " + dimStyle.Render("no branches match “"+p.query+"”")
+		return dimStyle.Render("no branches match “" + p.query + "”")
 	}
 
-	visible := innerH - 1
+	visible := innerH
 	if visible < 1 {
 		visible = 1
 	}
@@ -135,12 +134,11 @@ func (p *pickerModel) body(innerH int) string {
 	}
 
 	var b strings.Builder
-	b.WriteString("\n")
 	for i := start; i < end; i++ {
 		pointer := "  "
 		name := rows[i]
 		if i == p.cursor {
-			pointer = selectedStyle.Render(" ▸")
+			pointer = selectedStyle.Render(" ❯")
 			name = selectedStyle.Render(name)
 		} else {
 			name = keyStyle.Render(name)
@@ -153,7 +151,7 @@ func (p *pickerModel) body(innerH int) string {
 var pickerFooter = keyHint(
 	[2]string{"↑↓", "move"},
 	[2]string{"type", "search"},
-	[2]string{"⏎", "clone"},
+	[2]string{"enter", "clone"},
 	[2]string{"esc", "back"},
 	[2]string{"^C", "quit"},
 )

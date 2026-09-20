@@ -4,10 +4,23 @@ package gitx
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
 )
+
+// output receives git's progress. It is stdout by default and switched to
+// stderr in --print-path mode, where stdout must carry nothing but the path.
+var output io.Writer = os.Stdout
+
+// SetOutput redirects git's streamed progress away from stdout.
+func SetOutput(w io.Writer) { output = w }
+
+// Pull fast-forwards an existing working copy at dir.
+func Pull(dir string) error {
+	return run("-C", dir, "pull", "--ff-only")
+}
 
 // Clone performs a full clone of nameWithOwner into dir (or the default
 // directory when dir is empty). When branch is non-empty only that branch is
@@ -70,7 +83,7 @@ func SparseClone(nameWithOwner string, folders, files []string, branch, dir stri
 
 func run(args ...string) error {
 	cmd := exec.Command("git", args...)
-	cmd.Stdout = os.Stdout
+	cmd.Stdout = output
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 	return cmd.Run()

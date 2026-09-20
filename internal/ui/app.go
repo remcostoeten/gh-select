@@ -36,15 +36,19 @@ const (
 	ActionCopyName
 	ActionCopyURL
 	ActionOpenWeb
+	ActionOpenEditor // open the local clone in $EDITOR, cloning first if needed
+	ActionPull       // fast-forward an existing local clone
+	ActionPrintPath  // print the local path for a shell wrapper to cd into
 )
 
 // Result is what the program should do once the TUI returns.
 type Result struct {
-	Action  ActionType
-	Repo    gh.Repo
-	Branch  string   // non-empty to clone a specific branch
-	Folders []string // selected folders, for ActionSparseClone
-	Files   []string // selected individual files, for ActionSparseClone
+	Action    ActionType
+	Repo      gh.Repo
+	Branch    string   // non-empty to clone a specific branch
+	Folders   []string // selected folders, for ActionSparseClone
+	Files     []string // selected individual files, for ActionSparseClone
+	LocalPath string   // existing working copy, when the repo is already cloned
 }
 
 type screen int
@@ -93,6 +97,11 @@ type App struct {
 
 	// action menu
 	actionCursor int
+	actions      []actionItem // rebuilt per repo: local clones get extra entries
+
+	// local clones, keyed by "owner/repo"; empty when no clone dir is set
+	locals    map[string]string
+	printPath bool // select-and-print mode: enter returns a path, no action menu
 
 	// branch picker
 	picker        *pickerModel
@@ -129,8 +138,30 @@ func NewApp(client *gh.Client, initial []gh.Repo, refresh bool, saveFn func([]gh
 		width:   80,
 		height:  24,
 	}
-	a.list = newRepoList(initial, a.width, a.height-chromeLines-searchBoxLines)
+	lw, lh := a.listPanelSize()
+	a.list = newRepoList(initial, lw-4, lh-2)
 	return a
+}
+
+// SetLocalClones tells the UI which repos already exist on disk, keyed by
+// "owner/repo", so they can be badged and offered "open" over "clone".
+func (a *App) SetLocalClones(locals map[string]string) {
+	a.locals = locals
+	a.list.SetDelegate(compactDelegate{bare: a.scope == scopeMine, locals: locals})
+}
+
+// SetPrintPath switches the app into select-and-print mode, where choosing a
+// repo returns its path instead of opening the action menu.
+func (a *App) SetPrintPath(on bool) { a.printPath = on }
+
+// localPath is the working copy for a repo, or "" when it isn't cloned.
+func (a *App) localPath(nameWithOwner string) string { return a.locals[nameWithOwner] }
+
+// listPanelSize is the outer size of the repo list panel: the content column
+// minus the details column, and the body height minus the search panel.
+func (a *App) listPanelSize() (w, h int) {
+	main, _ := splitWidths(contentWidth(a.width))
+	return main, a.height - chromeLines - searchBoxLines
 }
 
 // applyFilter recomputes the visible repo items for the current query and
@@ -163,6 +194,7 @@ func (a *App) toggleScope() (tea.Model, tea.Cmd) {
 	a.status = ""
 	if a.scope == scopeMine {
 		a.scope = scopeGitHub
+		a.list.SetDelegate(compactDelegate{locals: a.locals})
 		a.searchSeq++
 		if a.query == "" {
 			a.list.SetItems(nil) // wait for input before hitting the API
@@ -172,6 +204,7 @@ func (a *App) toggleScope() (tea.Model, tea.Cmd) {
 		return a, tea.Batch(a.remoteSearchCmd(a.query), a.spinner.Tick)
 	}
 	a.scope = scopeMine
+	a.list.SetDelegate(compactDelegate{bare: true, locals: a.locals})
 	a.searching = false
 	a.searchSeq++ // invalidate any in-flight GitHub response
 	a.applyFilter()
@@ -275,7 +308,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		a.width, a.height = msg.Width, msg.Height
-		a.list.SetSize(msg.Width, msg.Height-chromeLines-searchBoxLines)
+		lw, lh := a.listPanelSize()
+		a.list.SetSize(lw-4, lh-2)
 		if a.tree != nil {
 			a.tree.setSize(msg.Width, msg.Height)
 		}
@@ -329,7 +363,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case branchesLoadedMsg:
 		a.branchLoading = false
 		if msg.err != nil {
-			// Non-fatal: report and drop back to the action menu.
+			// Non-fatal: drop back to the action menu with the failure visible in
+			// the status line, so the bounce-back is explained.
+			a.status = "Couldn't load branches: " + msg.err.Error()
 			a.screen = screenActions
 			return a, nil
 		}
@@ -366,8 +402,18 @@ func (a *App) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if it, ok := a.list.SelectedItem().(repoItem); ok {
 			a.selected = it.repo
+			if a.printPath {
+				a.Result = Result{
+					Action:    ActionPrintPath,
+					Repo:      it.repo,
+					LocalPath: a.localPath(it.repo.NameWithOwner),
+				}
+				return a, tea.Quit
+			}
 			a.screen = screenActions
+			a.actions = a.menuFor(it.repo)
 			a.actionCursor = 0
+			a.status = ""
 		}
 		return a, nil
 	case "esc":
@@ -427,92 +473,115 @@ func (a *App) updateTree(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) View() string {
+	return paintBackground(a.view(), a.width)
+}
+
+func (a *App) view() string {
 	if a.err != nil {
 		return errStyle.Render("Error: "+a.err.Error()) + "\n"
 	}
 	switch a.screen {
 	case screenActions:
+		status := ""
+		if a.status != "" {
+			status = statusStyle.Render(a.status)
+		}
 		return compose(a.width, a.height, a.version,
-			a.selected.NameWithOwner, a.viewActions(), actionsFooter)
+			a.selected.NameWithOwner, a.viewActions(), status, a.actionsFooter())
 	case screenBranches:
 		return a.viewBranches()
 	case screenTree:
-		context, body, keys := a.tree.chromeParts(a.spinner.View(), a.height-chromeLines)
-		return compose(a.width, a.height, a.version, context, body, keys)
+		context, body, status, keys := a.tree.chromeParts(a.spinner.View(), a.height-chromeLines)
+		return compose(a.width, a.height, a.version, context, body, status, keys)
 	default:
-		return compose(a.width, a.height, a.version, a.listContext(), a.viewList(), a.listFooter())
+		return compose(a.width, a.height, a.version,
+			"", a.viewList(), a.listStatus(), a.listFooter())
 	}
 }
 
-// listContext is the right-hand header text for the repo list: the active scope
-// and a result count. The live query itself lives in the search box below.
-func (a *App) listContext() string {
+// listPanelTitle names the repo panel with the active scope and result count.
+func (a *App) listPanelTitle() string {
 	if a.scope == scopeGitHub {
 		if a.query == "" {
-			return contextStyle.Render("GitHub")
+			return "github"
 		}
-		return contextStyle.Render("GitHub") + dimStyle.Render(fmt.Sprintf(" · %d", len(a.list.Items())))
+		return fmt.Sprintf("github · %d", len(a.list.Items()))
 	}
 	if a.query == "" {
-		return dimStyle.Render(fmt.Sprintf("My repos · %d", len(a.repos)))
+		return fmt.Sprintf("my repos · %d", len(a.repos))
 	}
-	return dimStyle.Render("My repos · ") + fmt.Sprintf("%d/%d", len(a.list.Items()), len(a.repos))
+	return fmt.Sprintf("my repos · %d/%d", len(a.list.Items()), len(a.repos))
 }
 
-// searchBox renders the always-on search field for the repo list, with a
-// scope-appropriate placeholder when nothing has been typed yet.
-func (a *App) searchBox() string {
+// viewList renders the search panel, the repo panel, and (on wide terminals) a
+// details panel for the highlighted repo. Background search/refresh progress
+// lives in the chrome's status line (listStatus), so stale results stay on
+// screen while a new GitHub search is in flight instead of blanking away on
+// every debounced keystroke.
+func (a *App) viewList() string {
 	placeholder := "filter your repos…"
 	if a.scope == scopeGitHub {
 		placeholder = "search GitHub — e.g. torvalds/linux"
 	}
-	return inputBox(searchField(a.query, placeholder), a.width)
-}
+	cw := contentWidth(a.width)
+	search := panel("search", searchField(a.query, placeholder), cw, searchBoxLines, true)
 
-// viewList renders the search box, the repo list body, and any background
-// search/refresh status. When the list is empty it substitutes a
-// context-appropriate line for the list's blunt built-in "No items." placeholder.
-func (a *App) viewList() string {
-	box := a.searchBox()
-
-	if a.searching {
-		return box + "\n  " + a.spinner.View() + statusStyle.Render(" Searching GitHub…")
-	}
+	body := a.list.View()
 	if len(a.list.Items()) == 0 {
-		var msg string
 		switch {
-		case a.status != "":
-			msg = statusStyle.Render(a.status)
+		case a.searching, a.status != "":
+			body = "" // the status line explains the empty panel
 		case a.scope == scopeGitHub && a.query == "":
-			msg = dimStyle.Render("type a username, repo, or owner/name — e.g. torvalds/linux")
+			body = dimStyle.Render("type a username, repo, or owner/name — e.g. torvalds/linux")
 		case a.query != "":
-			msg = dimStyle.Render("no repositories match “" + a.query + "”")
+			body = dimStyle.Render("no repositories match “" + a.query + "”")
 		default:
-			msg = dimStyle.Render("no repositories")
+			body = dimStyle.Render("no repositories")
 		}
-		return box + "\n  " + msg
 	}
 
-	view := box + "\n" + a.list.View()
-	if a.loading {
-		view += "\n" + a.spinner.View() + statusStyle.Render(" Refreshing repositories…")
-	} else if a.status != "" {
-		view += "\n" + statusStyle.Render(a.status)
+	lw, lh := a.listPanelSize()
+	repos := panel(a.listPanelTitle(), body, lw, lh, false)
+	if _, sw := splitWidths(cw); sw > 0 {
+		detail := panel("info", dimStyle.Render("no selection"), sw, lh, false)
+		if it, ok := a.list.SelectedItem().(repoItem); ok {
+			detail = detailColumn(it.repo, a.localPath(it.repo.NameWithOwner), sw, lh)
+		}
+		repos = hsplit(repos, detail)
 	}
-	return view
+	return search + "\n" + repos
 }
 
-// viewBranches renders the branch picker (or its loading state) in chrome.
+// listStatus feeds the chrome's status line: in-flight work first, then any
+// sticky message from a failed refresh or search.
+func (a *App) listStatus() string {
+	switch {
+	case a.searching:
+		return a.spinner.View() + statusStyle.Render(" Searching GitHub…")
+	case a.loading:
+		return a.spinner.View() + statusStyle.Render(" Refreshing repositories…")
+	case a.status != "":
+		return statusStyle.Render(a.status)
+	}
+	return ""
+}
+
+// viewBranches renders the branch picker (or its loading state) as a search
+// panel plus a branches panel, with the repo's details alongside when wide.
 func (a *App) viewBranches() string {
 	context := a.selected.NameWithOwner
 	if a.branchLoading || a.picker == nil {
-		body := "\n  " + a.spinner.View() + statusStyle.Render(" Loading branches…")
-		return compose(a.width, a.height, a.version, context, body, pickerFooter)
+		status := a.spinner.View() + statusStyle.Render(" Loading branches…")
+		return compose(a.width, a.height, a.version, context, "", status, pickerFooter)
 	}
-	context = a.selected.NameWithOwner + dimStyle.Render("  ·  ") + a.picker.context()
-	box := inputBox(searchField(a.picker.query, "filter branches…"), a.width)
-	body := box + "\n" + a.picker.body(a.height-chromeLines-searchBoxLines)
-	return compose(a.width, a.height, a.version, context, body, pickerFooter)
+	cw := contentWidth(a.width)
+	search := panel("search", searchField(a.picker.query, "filter branches…"), cw, searchBoxLines, true)
+	lw, lh := a.listPanelSize()
+	branches := panel(a.picker.context(), a.picker.body(lh-2), lw, lh, false)
+	if _, sw := splitWidths(cw); sw > 0 {
+		branches = hsplit(branches, detailColumn(a.selected, a.localPath(a.selected.NameWithOwner), sw, lh))
+	}
+	return compose(a.width, a.height, a.version, context, search+"\n"+branches, "", pickerFooter)
 }
 
 func (a *App) listFooter() string {
@@ -524,7 +593,7 @@ func (a *App) listFooter() string {
 		[2]string{"↑↓", "move"},
 		[2]string{"type", "search"},
 		scopeHint,
-		[2]string{"⏎", "select"},
+		[2]string{"enter", "select"},
 		[2]string{"esc", "clear"},
 		[2]string{"^C", "quit"},
 	)

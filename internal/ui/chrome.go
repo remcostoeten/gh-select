@@ -7,55 +7,141 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// Persistent app chrome: a boxed header (app name + version + context) and a
-// boxed footer (contextual key hints) drawn around every screen so the TUI
-// always shows where you are and what you can press. Each box is pinned to a
-// single content line, so the chrome always occupies a fixed number of rows —
-// which lets every screen compute its remaining body height.
-const chromeLines = 6 // header box (3) + footer box (3)
+// Slim persistent chrome: a one-line header (app name + screen context), a
+// blank breathing row, a one-line status row, and a one-line key-hint footer.
+// All framing comes from titled panels, giving the multi-pane dashboard feel
+// of tools like lazygit — the focused panel gets a highlight border, the rest
+// stay dim. The whole layout is centered and capped at maxContentWidth so it
+// doesn't stretch thin across very wide terminals.
+const chromeLines = 4 // header (1) + blank (1) + status line (1) + footer (1)
 
-// box wraps a single content line in a full-width rounded border with one cell
-// of horizontal padding. Content is truncated (never wrapped) so the box stays
-// exactly three rows tall regardless of terminal width.
-func box(content string, width int) string {
-	if width < 4 {
-		width = 4
+// maxContentWidth caps how wide the layout grows; anything wider is margin.
+const maxContentWidth = 118
+
+// contentWidth is the width the layout actually occupies.
+func contentWidth(total int) int {
+	w := total - 4 // always keep a little side margin
+	if w > maxContentWidth {
+		w = maxContentWidth
 	}
-	inner := width - 4 // 2 border cells + 2 padding cells
-	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colDim).
-		Padding(0, 1).
-		Width(width - 2). // total width including the left/right border cells
-		MaxHeight(3).
-		Render(truncate(content, inner))
+	if w < 20 {
+		w = total
+	}
+	return w
 }
 
-// searchBoxLines is the height the always-on search field occupies (a bordered
-// box, like the header/footer). Screens that render it must shrink their body
-// by this many rows so everything still fits within the chrome.
+// contentPad is the left margin that centers the content column.
+func contentPad(total int) int {
+	pad := (total - contentWidth(total)) / 2
+	if pad < 0 {
+		pad = 0
+	}
+	return pad
+}
+
+// splitWidths divides the content column into the main panel and the side
+// column (details / selection), leaving a one-cell gap between them. side is 0
+// when the terminal is too narrow for a second column.
+func splitWidths(total int) (main, side int) {
+	side = sideWidth(total)
+	main = total
+	if side > 0 {
+		main = total - side - 1
+	}
+	return main, side
+}
+
+// searchBoxLines is the height of the search panel (border + input + border).
 const searchBoxLines = 3
 
-// inputBox wraps content in a rounded border with a focus-colored edge — the
-// always-on search field. Like box() it stays exactly three rows tall.
-func inputBox(content string, width int) string {
-	if width < 4 {
-		width = 4
+// chromeBorder is the rune set every panel is drawn with; selectable via
+// SetBorder.
+var chromeBorder = lipgloss.RoundedBorder()
+
+// sideWidth is the width of the right-hand companion column (details,
+// selection); 0 when the terminal is too narrow for a second column.
+func sideWidth(total int) int {
+	if total < 80 {
+		return 0
 	}
-	inner := width - 4 // 2 border cells + 2 padding cells
-	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colHL).
-		Padding(0, 1).
-		Width(width - 2).
-		MaxHeight(3).
-		Render(truncate(content, inner))
+	w := total * 2 / 5
+	if w > 56 {
+		w = 56
+	}
+	return w
 }
 
-// searchField builds the search input's content line: a magnifier prompt, then
-// either the typed query (with a block cursor) or a dim placeholder when empty.
+// panel draws content inside a full border with the title embedded in the top
+// edge — the building block of the layout. width and height are outer sizes;
+// content lines are clipped (never wrapped) and padded so the box is always
+// exact, which keeps side-by-side panels aligned.
+func panel(title, content string, width, height int, focused bool) string {
+	if width < 6 {
+		width = 6
+	}
+	if height < 2 {
+		height = 2
+	}
+	edge := dimStyle
+	label := dimStyle
+	if focused {
+		edge = lipgloss.NewStyle().Foreground(colHL)
+		label = lipgloss.NewStyle().Foreground(colHL).Bold(true)
+	}
+	inner := width - 4 // 2 border cells + 2 padding cells
+	b := chromeBorder
+
+	var out strings.Builder
+
+	if title == "" {
+		out.WriteString(edge.Render(b.TopLeft + strings.Repeat(b.Top, width-2) + b.TopRight))
+	} else {
+		t := truncate(title, inner-2)
+		rest := width - lipgloss.Width(t) - 5 // TL + top rune + 2 spaces + TR
+		if rest < 0 {
+			rest = 0
+		}
+		out.WriteString(edge.Render(b.TopLeft+b.Top) + " " + label.Render(t) + " " +
+			edge.Render(strings.Repeat(b.Top, rest)+b.TopRight))
+	}
+	out.WriteString("\n")
+
+	left, right := edge.Render(b.Left), edge.Render(b.Right)
+	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
+	for i := 0; i < height-2; i++ {
+		line := ""
+		if i < len(lines) {
+			line = truncate(lines[i], inner)
+		}
+		pad := inner - lipgloss.Width(line)
+		if pad < 0 {
+			pad = 0
+		}
+		out.WriteString(left + " " + line + strings.Repeat(" ", pad) + " " + right + "\n")
+	}
+
+	out.WriteString(edge.Render(b.BottomLeft + strings.Repeat(b.Bottom, width-2) + b.BottomRight))
+	return out.String()
+}
+
+// hsplit places two same-height panels side by side with a one-cell gap.
+func hsplit(left, right string) string {
+	return lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)
+}
+
+// indent prefixes every line with n spaces — used to center the content column.
+func indent(s string, n int) string {
+	if n < 1 {
+		return s
+	}
+	pad := strings.Repeat(" ", n)
+	return pad + strings.ReplaceAll(s, "\n", "\n"+pad)
+}
+
+// searchField builds the search input's content line: a prompt, then either
+// the typed query (with a block cursor) or a dim placeholder when empty.
 func searchField(query, placeholder string) string {
-	prompt := keyStyle.Render("🔍 ")
+	prompt := keyStyle.Render("> ")
 	cursor := selectedStyle.Render("▏")
 	if query == "" {
 		return prompt + dimStyle.Render(placeholder) + cursor
@@ -88,16 +174,25 @@ func headerLine(version, context string, innerWidth int) string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
-// compose stacks the header, a body padded to exactly innerHeight rows, and the
-// footer — so the footer is always pinned to the bottom of the screen.
-func compose(width, height int, version, context, body, keys string) string {
-	header := box(headerLine(version, context, width-4), width)
-	footer := box(keys, width)
+// compose stacks the slim header, a breathing row, a body padded to exactly
+// innerHeight rows, the status line, and the key-hint footer — the footer is
+// always pinned to the bottom of the screen with status visible above it, and
+// the whole column is centered within the terminal.
+func compose(width, height int, version, context, body, status, keys string) string {
+	cw := contentWidth(width)
 	innerH := height - chromeLines
 	if innerH < 1 {
 		innerH = 1
 	}
-	return header + "\n" + fitHeight(body, innerH) + "\n" + footer
+	statusLine := ""
+	if status != "" {
+		statusLine = truncate(" "+status, cw)
+	}
+	out := headerLine(version, context, cw) + "\n\n" +
+		fitHeight(body, innerH) + "\n" +
+		statusLine + "\n" +
+		" " + truncate(keys, cw-1)
+	return indent(out, contentPad(width))
 }
 
 // fitHeight truncates or blank-pads body to exactly n rows.

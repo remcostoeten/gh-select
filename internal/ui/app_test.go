@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -17,6 +18,19 @@ func key(s string) tea.KeyMsg {
 	default:
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 	}
+}
+
+// actionKey is the number shortcut for an action in the menu as currently
+// built, so tests stay correct when the menu's composition changes.
+func actionKey(t *testing.T, a *App, act ActionType) tea.KeyMsg {
+	t.Helper()
+	for _, it := range a.actions {
+		if it.act == act {
+			return key(it.key)
+		}
+	}
+	t.Fatalf("action %v not in menu", act)
+	return tea.KeyMsg{}
 }
 
 func send(t *testing.T, a *App, msg tea.Msg) *App {
@@ -50,7 +64,7 @@ func TestSelectThenCopyName(t *testing.T) {
 		t.Error("actions view missing repo name")
 	}
 
-	a = send(t, a, key("4")) // copy name
+	a = send(t, a, actionKey(t, a, ActionCopyName))
 	if a.Result.Action != ActionCopyName {
 		t.Fatalf("action = %v, want ActionCopyName", a.Result.Action)
 	}
@@ -150,8 +164,8 @@ func TestRemoteResultsStaleGuard(t *testing.T) {
 func TestTreeSelectAndConfirm(t *testing.T) {
 	a := NewApp(nil, sampleRepos, false, nil, "test")
 	a = send(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
-	a = send(t, a, key("enter")) // -> actions
-	a = send(t, a, key("3"))     // Browse & partial clone -> tree
+	a = send(t, a, key("enter"))                       // -> actions
+	a = send(t, a, actionKey(t, a, ActionSparseClone)) // -> tree
 	if a.screen != screenTree || a.tree == nil {
 		t.Fatalf("did not enter tree screen")
 	}
@@ -189,7 +203,7 @@ func TestTreeFileSelect(t *testing.T) {
 	a := NewApp(nil, sampleRepos, false, nil, "test")
 	a = send(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
 	a = send(t, a, key("enter"))
-	a = send(t, a, key("3")) // Browse & partial clone -> tree
+	a = send(t, a, actionKey(t, a, ActionSparseClone)) // -> tree
 	a = send(t, a, treeLoadedMsg{tree: &gh.Tree{Entries: []gh.TreeEntry{
 		{Path: "docs", Type: "tree"},
 		{Path: "README.md", Type: "blob"},
@@ -219,7 +233,7 @@ func TestBranchPicker(t *testing.T) {
 	a := NewApp(nil, sampleRepos, false, nil, "test")
 	a = send(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
 	a = send(t, a, key("enter"))
-	a = send(t, a, key("2")) // Clone a specific branch…
+	a = send(t, a, actionKey(t, a, ActionCloneBranch))
 	if a.screen != screenBranches || !a.branchLoading {
 		t.Fatalf("did not enter branch screen: screen=%v loading=%v", a.screen, a.branchLoading)
 	}
@@ -260,7 +274,7 @@ func TestViewsDoNotPanic(t *testing.T) {
 	a = send(t, a, key("enter"))
 	mustRender(t, a, "actions")
 
-	a = send(t, a, key("3")) // Browse & partial clone -> tree
+	a = send(t, a, actionKey(t, a, ActionSparseClone)) // -> tree
 	mustRender(t, a, "tree-loading")
 
 	a = send(t, a, treeLoadedMsg{tree: &gh.Tree{Entries: []gh.TreeEntry{
@@ -290,7 +304,7 @@ func TestTreeFilter(t *testing.T) {
 	a := NewApp(nil, sampleRepos, false, nil, "test")
 	a = send(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
 	a = send(t, a, key("enter"))
-	a = send(t, a, key("3")) // Browse & partial clone -> tree
+	a = send(t, a, actionKey(t, a, ActionSparseClone)) // -> tree
 	a = send(t, a, treeLoadedMsg{tree: &gh.Tree{Entries: []gh.TreeEntry{
 		{Path: "docs", Type: "tree"},
 		{Path: "src", Type: "tree"},
@@ -321,12 +335,100 @@ func names(ns []*node) []string {
 	return out
 }
 
+// Background refresh progress renders in the reserved status line, which can
+// never be clipped by a full list body.
+func TestRefreshStatusVisible(t *testing.T) {
+	a := NewApp(nil, sampleRepos, true, nil, "test")
+	a = send(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+	if !strings.Contains(a.View(), "Refreshing repositories") {
+		t.Error("refresh status not visible in view")
+	}
+}
+
+// A failed branch fetch must drop back to the action menu with the error shown.
+func TestBranchErrorSurfaced(t *testing.T) {
+	a := NewApp(nil, sampleRepos, false, nil, "test")
+	a = send(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+	a = send(t, a, key("enter"))
+	a = send(t, a, actionKey(t, a, ActionCloneBranch))
+	a = send(t, a, branchesLoadedMsg{err: errors.New("boom")})
+	if a.screen != screenActions {
+		t.Fatalf("screen = %v, want actions", a.screen)
+	}
+	if !strings.Contains(a.View(), "Couldn't load branches") {
+		t.Error("branch error not visible on actions screen")
+	}
+}
+
+// An in-flight GitHub search keeps the previous results on screen and reports
+// progress via the status line instead of blanking the list.
+func TestSearchKeepsStaleResults(t *testing.T) {
+	a := NewApp(nil, sampleRepos, false, nil, "test")
+	a = send(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+	a = send(t, a, tea.KeyMsg{Type: tea.KeyTab})
+	a = send(t, a, key("linux"))
+	a = send(t, a, remoteReposMsg{query: "linux", repos: []gh.Repo{{NameWithOwner: "torvalds/linux"}}})
+
+	a = send(t, a, key("x")) // query is now "linuxx"; schedules a debounce
+	a = send(t, a, debounceMsg{seq: a.searchSeq})
+	if !a.searching {
+		t.Fatal("debounce did not start a search")
+	}
+	if len(a.list.Items()) != 1 {
+		t.Errorf("stale results dropped during search: items=%d", len(a.list.Items()))
+	}
+	if !strings.Contains(a.View(), "Searching GitHub") {
+		t.Error("search progress not visible in view")
+	}
+}
+
+// My-repos rows drop the owner prefix; GitHub search rows keep it.
+func TestListOwnerPrefixByScope(t *testing.T) {
+	a := NewApp(nil, sampleRepos, false, nil, "test")
+	a = send(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+	if v := a.list.View(); strings.Contains(v, "remcostoeten/alpha") {
+		t.Error("my-repos list still shows the owner prefix")
+	} else if !strings.Contains(v, "alpha") {
+		t.Error("my-repos list lost the repo name")
+	}
+
+	a = send(t, a, tea.KeyMsg{Type: tea.KeyTab})
+	a = send(t, a, key("linux"))
+	a = send(t, a, remoteReposMsg{query: "linux", repos: []gh.Repo{{NameWithOwner: "torvalds/linux"}}})
+	if !strings.Contains(a.list.View(), "torvalds/linux") {
+		t.Error("GitHub search list dropped the owner prefix")
+	}
+
+	a = send(t, a, tea.KeyMsg{Type: tea.KeyTab})
+	if strings.Contains(a.list.View(), "remcostoeten/alpha") {
+		t.Error("owner prefix returned after switching back to my repos")
+	}
+}
+
+// ? toggles the tree's full-keymap overlay.
+func TestTreeHelpToggle(t *testing.T) {
+	a := NewApp(nil, sampleRepos, false, nil, "test")
+	a = send(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+	a = send(t, a, key("enter"))
+	a = send(t, a, actionKey(t, a, ActionSparseClone))
+	a = send(t, a, treeLoadedMsg{tree: &gh.Tree{Entries: []gh.TreeEntry{{Path: "src", Type: "tree"}}}})
+
+	a = send(t, a, key("?"))
+	if !a.tree.helpVisible || !strings.Contains(a.View(), "Tree browser keys") {
+		t.Fatal("help overlay not shown")
+	}
+	a = send(t, a, key("?"))
+	if a.tree.helpVisible {
+		t.Error("help overlay did not close")
+	}
+}
+
 // Confirming with nothing selected must not produce a clone action.
 func TestTreeConfirmEmpty(t *testing.T) {
 	a := NewApp(nil, sampleRepos, false, nil, "test")
 	a = send(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
 	a = send(t, a, key("enter"))
-	a = send(t, a, key("3")) // Browse & partial clone -> tree
+	a = send(t, a, actionKey(t, a, ActionSparseClone)) // -> tree
 	a = send(t, a, treeLoadedMsg{tree: &gh.Tree{Entries: []gh.TreeEntry{{Path: "src", Type: "tree"}}}})
 	a = send(t, a, key("c")) // confirm with no selection
 	if a.Result.Action != ActionNone {
@@ -334,5 +436,60 @@ func TestTreeConfirmEmpty(t *testing.T) {
 	}
 	if !strings.Contains(a.tree.status, "select at least one") {
 		t.Errorf("missing guidance status, got %q", a.tree.status)
+	}
+}
+
+// A repo already on disk leads with open/pull and is badged in the list.
+func TestLocalCloneAwareMenu(t *testing.T) {
+	a := NewApp(nil, sampleRepos, false, nil, "test")
+	a.SetLocalClones(map[string]string{"remcostoeten/alpha": "/src/alpha"})
+	a = send(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	if !strings.Contains(a.View(), "local") {
+		t.Error("list view missing the local badge")
+	}
+
+	a = send(t, a, key("enter"))
+	if a.actions[0].act != ActionOpenEditor || a.actions[1].act != ActionPull {
+		t.Fatalf("menu leads with %v, %v", a.actions[0].act, a.actions[1].act)
+	}
+	if !strings.Contains(a.View(), "/src/alpha") {
+		t.Error("actions view missing the local path")
+	}
+
+	a = send(t, a, actionKey(t, a, ActionPull))
+	if a.Result.Action != ActionPull || a.Result.LocalPath != "/src/alpha" {
+		t.Fatalf("result = %v %q", a.Result.Action, a.Result.LocalPath)
+	}
+}
+
+// Without a local clone the menu offers clone variants, never pull.
+func TestMenuWithoutLocalClone(t *testing.T) {
+	a := NewApp(nil, sampleRepos, false, nil, "test")
+	a = send(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+	a = send(t, a, key("enter"))
+	if a.actions[0].act != ActionClone {
+		t.Fatalf("menu leads with %v, want ActionClone", a.actions[0].act)
+	}
+	for _, it := range a.actions {
+		if it.act == ActionPull {
+			t.Fatal("pull offered for a repo that isn't cloned")
+		}
+	}
+}
+
+// print-path mode skips the action menu and returns the path straight away.
+func TestPrintPathMode(t *testing.T) {
+	a := NewApp(nil, sampleRepos, false, nil, "test")
+	a.SetLocalClones(map[string]string{"remcostoeten/alpha": "/src/alpha"})
+	a.SetPrintPath(true)
+	a = send(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+	a = send(t, a, key("enter"))
+
+	if a.screen == screenActions {
+		t.Error("print-path mode opened the action menu")
+	}
+	if a.Result.Action != ActionPrintPath || a.Result.LocalPath != "/src/alpha" {
+		t.Fatalf("result = %v %q", a.Result.Action, a.Result.LocalPath)
 	}
 }

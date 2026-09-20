@@ -13,6 +13,10 @@ A fast `gh` CLI extension to **fuzzy-search your GitHub repositories**, **browse
 - **Partial / sparse clone** — select individual folders and clone only those with `git clone --filter=blob:none --sparse`, saving bandwidth and disk on large monorepos.
 - **Zero extra dependencies** — the TUI and GitHub API client are built in; no `fzf`, no `jq`.
 - **One precompiled binary** — install as a `gh` extension or a standalone binary; nothing to compile.
+- **Knows what you already have** — repos cloned under your clone directory are badged `local` and offer *open in editor* / *pull* instead of a redundant clone.
+- **Lands where you want it** — set a clone root once (`--dir` / `GH_SELECT_CLONE_DIR`) instead of cloning into whatever directory you happen to be in.
+- **`cd` into the result** — `gh select --print-path` prints the repo's path (cloning it first if needed) so a one-line shell wrapper can jump straight into it.
+- **Your repos, and your org's** — owned, organization, and collaborator repositories all appear in one list.
 - **Quick actions** — clone, copy repo name or URL, and open in browser without leaving the terminal.
 
 ## Installation
@@ -83,14 +87,47 @@ cloning it**:
 ### Options
 
 ```bash
-gh select -n, --no-cache   # bypass cache, fetch fresh data
-gh select -r, --refresh    # refresh cache and exit
-gh select -v, --version    # show version
-gh select -h, --help       # show help
-gh select doctor           # check tools + authentication
+gh select -n, --no-cache     # bypass cache, fetch fresh data
+gh select -r, --refresh      # refresh cache and exit
+gh select -d, --dir DIR      # clone into DIR instead of the current directory
+gh select -p, --print-path   # print the selected repo's path on stdout
+gh select -v, --version      # show version
+gh select -h, --help         # show help
+gh select doctor             # check tools + authentication
 ```
 
-`GH_SELECT_CACHE_TTL` (seconds) controls cache freshness (default 1800).
+Environment: `GH_SELECT_CACHE_TTL` (seconds) controls cache freshness
+(default 1800); `GH_SELECT_CLONE_DIR` sets the clone root.
+
+### A clone directory
+
+Point gh-select at where you keep code and it stops cloning into the current
+directory:
+
+```bash
+export GH_SELECT_CLONE_DIR=~/dev
+```
+
+It then scans that directory (one level deep, plus `owner/repo` layouts) for
+existing working copies. Repos it finds are badged `local` in the list, and
+their action menu leads with **Open in editor** (`$VISUAL`/`$EDITOR`) and
+**Pull** rather than a clone that would fail.
+
+### Jumping into a repo
+
+A TUI can't change your shell's directory, so `--print-path` writes the
+selected repo's path to stdout — cloning it first if you don't have it yet —
+and everything else goes to stderr:
+
+```fish
+function ghcd
+    set -l dir (gh select --print-path); and cd $dir
+end
+```
+
+```bash
+ghcd() { local dir; dir=$(gh select --print-path) && cd "$dir"; }
+```
 
 ## Performance
 
