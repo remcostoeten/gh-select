@@ -24,6 +24,12 @@ func New(dir string, ttl time.Duration) *Cache {
 	return &Cache{dir: dir, file: filepath.Join(dir, "repos.json"), ttl: ttl}
 }
 
+// Named returns a Cache sharing c's directory and freshness window but stored
+// in its own file, e.g. Named("starred") for the starred list.
+func (c *Cache) Named(name string) *Cache {
+	return &Cache{dir: c.dir, file: filepath.Join(c.dir, name+".json"), ttl: c.ttl}
+}
+
 // Entry is the cached payload plus the age of the data on disk.
 type Entry struct {
 	Repos []gh.Repo

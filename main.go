@@ -15,6 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/remcostoeten/gh-select/internal/cache"
 	"github.com/remcostoeten/gh-select/internal/config"
+	"github.com/remcostoeten/gh-select/internal/download"
 	"github.com/remcostoeten/gh-select/internal/gh"
 	"github.com/remcostoeten/gh-select/internal/gitx"
 	"github.com/remcostoeten/gh-select/internal/local"
@@ -69,6 +70,7 @@ func main() {
 		transparent = flag.Bool("transparent", false, "don't paint the app background (also GH_SELECT_TRANSPARENT)")
 		cloneDir    = flag.String("dir", "", "directory to clone into (also GH_SELECT_CLONE_DIR)")
 		printPath   = flag.Bool("print-path", false, "print the selected repo's local path, cloning it if needed")
+		downloadDir = flag.String("download-dir", "", "directory release assets and saved files go to (also GH_SELECT_DOWNLOAD_DIR)")
 	)
 	flag.BoolVar(noCache, "n", false, "bypass cache (shorthand)")
 	flag.BoolVar(refreshOnly, "r", false, "refresh cache and exit (shorthand)")
@@ -91,6 +93,7 @@ func main() {
 		transparent: *transparent,
 		cloneDir:    *cloneDir,
 		printPath:   *printPath,
+		downloadDir: *downloadDir,
 	}
 	if err := run(opts); err != nil {
 		fmt.Fprintln(os.Stderr, errLine(err.Error()))
@@ -108,6 +111,7 @@ type options struct {
 	transparent bool
 	cloneDir    string
 	printPath   bool
+	downloadDir string
 }
 
 func run(opts options) error {
@@ -185,10 +189,20 @@ func run(opts options) error {
 		needRefresh = false
 	}
 
+	downloadDir := config.ExpandHome(opts.downloadDir)
+	if downloadDir == "" {
+		downloadDir = cfg.DownloadDir
+	}
+
 	saveFn := func(repos []gh.Repo) { _ = c.Save(repos) }
+	locals := local.Index(cloneDir)
 	app := ui.NewApp(client, initial, needRefresh, saveFn, resolveVersion())
-	app.SetLocalClones(local.Index(cloneDir))
+	app.SetLocalClones(locals)
 	app.SetPrintPath(opts.printPath)
+	app.SetSaveDir(downloadDir)
+	starredCache := c.Named("starred")
+	starred, _ := starredCache.Load()
+	app.SetStarred(starred.Repos, func(repos []gh.Repo) { _ = starredCache.Save(repos) })
 
 	teaOpts := []tea.ProgramOption{tea.WithAltScreen()}
 	if opts.printPath {
@@ -199,13 +213,22 @@ func run(opts options) error {
 		return err
 	}
 
-	return execute(final.(*ui.App).Result, cloneDir)
+	return execute(final.(*ui.App).Result, env{cloneDir: cloneDir, downloadDir: downloadDir, client: client, cache: c, locals: locals})
+}
+
+// env carries what the post-TUI actions need beyond the Result itself.
+type env struct {
+	cloneDir    string // root every new clone lands under; "" means the cwd
+	downloadDir string // where release assets land; "" means the cwd
+	client      *gh.Client
+	cache       *cache.Cache
+	locals      map[string]string // "owner/repo" → existing working copy
 }
 
 // execute performs the side-effecting action chosen in the TUI, after the
-// alternate screen has been restored. cloneDir, when set, is the root every
-// new clone lands under instead of the current directory.
-func execute(res ui.Result, cloneDir string) error {
+// alternate screen has been restored.
+func execute(res ui.Result, e env) error {
+	cloneDir := e.cloneDir
 	switch res.Action {
 	case ui.ActionClone:
 		_, err := cloneTo(res, cloneDir)
@@ -216,7 +239,7 @@ func execute(res ui.Result, cloneDir string) error {
 			return err
 		}
 		paths := append(append([]string{}, res.Folders...), res.Files...)
-		fmt.Printf("Partial clone of %s → %s — paths: %s\n",
+		fmt.Printf("Partial clone of %s → %s, paths: %s\n",
 			res.Repo.NameWithOwner, displayDir(dir, res.Repo.NameWithOwner), strings.Join(paths, ", "))
 		return gitx.SparseClone(res.Repo.NameWithOwner, res.Folders, res.Files, res.Branch, dir)
 	case ui.ActionOpenEditor:
@@ -253,8 +276,63 @@ func execute(res ui.Result, cloneDir string) error {
 	case ui.ActionOpenWeb:
 		fmt.Printf("Opening %s…\n", res.Repo.URL())
 		return sys.OpenURL(res.Repo.URL())
+	case ui.ActionDelete:
+		return deleteRepos(res.Deletes, e)
+	case ui.ActionDownload:
+		fmt.Printf("Downloading from %s %s\n", res.Repo.NameWithOwner, res.Release)
+		return download.Assets(e.client, res.Assets, download.Options{
+			Dir:       e.downloadDir,
+			Extract:   res.Extract,
+			Checksums: res.Checksums,
+		})
 	}
 	return nil
+}
+
+// deleteRepos permanently deletes the repositories confirmed in the TUI. Each
+// one is reported as it goes and a failure never strands the rest, since a
+// single missing scope or stale entry shouldn't abandon a reviewed batch
+// halfway. Working copies on disk are deliberately left alone — only pointed
+// out — so a remote deletion can never take local work with it.
+func deleteRepos(repos []gh.Repo, e env) error {
+	deleted := map[string]bool{}
+	var failed []string
+	for _, r := range repos {
+		if err := e.client.DeleteRepo(r.NameWithOwner); err != nil {
+			fmt.Fprintln(os.Stderr, errLine(err.Error()))
+			failed = append(failed, r.NameWithOwner)
+			continue
+		}
+		deleted[r.NameWithOwner] = true
+		fmt.Printf("Deleted %s\n", r.NameWithOwner)
+		if path, ok := e.locals[r.NameWithOwner]; ok {
+			fmt.Printf("  local clone left in place: %s\n", path)
+		}
+	}
+	if len(deleted) > 0 {
+		pruneCache(e.cache, deleted)
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("%d of %d deletions failed: %s",
+			len(failed), len(repos), strings.Join(failed, ", "))
+	}
+	return nil
+}
+
+// pruneCache drops the deleted repos from the cached list so the next run
+// doesn't offer repositories that no longer exist.
+func pruneCache(c *cache.Cache, deleted map[string]bool) {
+	entry, ok := c.Load()
+	if !ok {
+		return
+	}
+	kept := make([]gh.Repo, 0, len(entry.Repos))
+	for _, r := range entry.Repos {
+		if !deleted[r.NameWithOwner] {
+			kept = append(kept, r)
+		}
+	}
+	_ = c.Save(kept)
 }
 
 // cloneTo clones the selected repo and returns the directory it landed in.
@@ -313,7 +391,7 @@ func errLine(s string) string { return "Error: " + s }
 // doctor reports whether the tools and authentication gh-select relies on are
 // present, without requiring a successful login itself.
 func doctor() error {
-	fmt.Printf("gh-select %s — environment check\n\n", resolveVersion())
+	fmt.Printf("gh-select %s: environment check\n\n", resolveVersion())
 
 	check := func(label string, ok bool, detail string) {
 		mark := "[x] "
@@ -332,7 +410,7 @@ func doctor() error {
 	authed := exec.Command("gh", "auth", "status").Run() == nil
 	detail := "logged in"
 	if !authed {
-		detail = "not authenticated — run: gh auth login"
+		detail = "not authenticated, run: gh auth login"
 	}
 	check("auth", authed, detail)
 
@@ -342,13 +420,13 @@ func doctor() error {
 
 func orMissing(path, missingHint string) string {
 	if path == "" {
-		return "not found — " + missingHint
+		return "not found, " + missingHint
 	}
 	return path
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `gh-select — interactive GitHub repository selector
+	fmt.Fprint(os.Stderr, `gh-select: interactive GitHub repository selector
 
 Usage:
   gh select [options]
@@ -359,8 +437,11 @@ Options:
   -r, --refresh    refresh cache and exit
   -d, --dir DIR    clone into DIR instead of the current directory
                    (or GH_SELECT_CLONE_DIR)
+  --download-dir DIR
+                   save release assets and browsed files into DIR instead
+                   of the current directory (or GH_SELECT_DOWNLOAD_DIR)
   -p, --print-path print the selected repo's local path on stdout, cloning it
-                   first if needed — for:  cd "$(gh select -p)"
+                   first if needed, for:  cd "$(gh select -p)"
   --theme NAME     color theme: tokyonight (default), catppuccin, dracula,
                    gruvbox, nord (or GH_SELECT_THEME)
   --border NAME    panel border: rounded (default), sharp, double, thick,
@@ -375,5 +456,12 @@ Inside the TUI:
   repos already cloned under --dir are badged "local" and offer open/pull
   tab to search all of GitHub (a username, repo, or owner/name)
   partial clone: pick folders with space, then press c
+  releases: / filters, n reads notes, o opens the release page, y copies a
+  link; in a release's downloads the file for this machine is preselected,
+  v previews, space marks several, enter downloads, x downloads and unpacks.
+  Downloads are verified against the release's checksum file when it has one.
+  ctrl+x marks repos you own, ctrl+d deletes every marked one on GitHub
+  (permanent; retype the shown phrase to confirm, and note that deleting
+  needs the delete_repo scope: gh auth refresh -s delete_repo)
 `)
 }

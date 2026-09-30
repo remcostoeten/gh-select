@@ -14,6 +14,7 @@ type Config struct {
 	CacheDir    string        // directory holding cached repo data
 	CacheTTL    time.Duration // how long cached data is considered fresh
 	CloneDir    string        // where clones land (empty = current directory)
+	DownloadDir string        // where release assets land (empty = current directory)
 	NoColor     bool          // disable ANSI styling
 	Theme       string        // UI color theme name (empty = default)
 	Border      string        // panel border style name (empty = default)
@@ -27,6 +28,7 @@ func Load() Config {
 		CacheDir:    cacheDir(),
 		CacheTTL:    cacheTTL(),
 		CloneDir:    ExpandHome(os.Getenv("GH_SELECT_CLONE_DIR")),
+		DownloadDir: ExpandHome(os.Getenv("GH_SELECT_DOWNLOAD_DIR")),
 		NoColor:     os.Getenv("NO_COLOR") != "",
 		Theme:       os.Getenv("GH_SELECT_THEME"),
 		Border:      os.Getenv("GH_SELECT_BORDER"),

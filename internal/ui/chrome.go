@@ -191,7 +191,7 @@ func compose(width, height int, version, context, body, status, keys string) str
 	out := headerLine(version, context, cw) + "\n\n" +
 		fitHeight(body, innerH) + "\n" +
 		statusLine + "\n" +
-		" " + truncate(keys, cw-1)
+		" " + fitHints(keys, cw-1)
 	return indent(out, contentPad(width))
 }
 
@@ -207,6 +207,8 @@ func fitHeight(body string, n int) string {
 	return strings.Join(lines, "\n")
 }
 
+const hintSep = " · "
+
 // keyHint renders a "key action" pair, then joins pairs with a dim separator —
 // used to build the footer strings.
 func keyHint(pairs ...[2]string) string {
@@ -214,5 +216,39 @@ func keyHint(pairs ...[2]string) string {
 	for _, p := range pairs {
 		parts = append(parts, keyStyle.Render(p[0])+" "+dimStyle.Render(p[1]))
 	}
-	return strings.Join(parts, dimStyle.Render("  ·  "))
+	return strings.Join(parts, dimStyle.Render(hintSep))
+}
+
+func dangerHint(key, label string) string {
+	return errStyle.Render(key) + " " + errStyle.UnsetBold().Render(label)
+}
+
+func fitHints(keys string, w int) string {
+	if lipgloss.Width(keys) <= w {
+		return keys
+	}
+	sep := dimStyle.Render(hintSep)
+	parts := strings.Split(keys, sep)
+	for len(parts) > 1 && lipgloss.Width(strings.Join(parts, sep)) > w {
+		parts = append(parts[:len(parts)-2], parts[len(parts)-1])
+	}
+	return truncate(strings.Join(parts, sep), w)
+}
+
+func helpBody(title string, rows [][2]string) string {
+	keyW := 0
+	for _, r := range rows {
+		keyW = max(keyW, lipgloss.Width(r[0]))
+	}
+	var b strings.Builder
+	b.WriteString("\n" + headerStyle.Render("  "+title) + "\n\n")
+	for _, r := range rows {
+		if r[0] == "" {
+			b.WriteString("\n")
+			continue
+		}
+		pad := strings.Repeat(" ", keyW-lipgloss.Width(r[0])+3)
+		b.WriteString("   " + keyStyle.Render(r[0]) + pad + dimStyle.Render(r[1]) + "\n")
+	}
+	return b.String()
 }

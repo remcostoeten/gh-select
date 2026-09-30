@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -26,21 +27,27 @@ func (a *App) menuFor(r gh.Repo) []actionItem {
 		items = append(items,
 			actionItem{"", "Open in editor", "the local clone in $EDITOR", ActionOpenEditor, 0},
 			actionItem{"", "Pull", "fast-forward the local clone", ActionPull, 0},
-			actionItem{"", "Clone again", "a second copy of the repository", ActionClone, 1},
+			actionItem{"", "Clone again", "a second, separate copy", ActionClone, 1},
 		)
 	} else {
 		items = append(items,
 			actionItem{"", "Clone", "the full repository", ActionClone, 0},
-			actionItem{"", "Clone & open", "clone, then open it in $EDITOR", ActionOpenEditor, 0},
+			actionItem{"", "Clone & open", "then open it in $EDITOR", ActionOpenEditor, 0},
 		)
 	}
 	items = append(items,
-		actionItem{"", "Clone branch…", "choose a single branch to clone", ActionCloneBranch, 1},
-		actionItem{"", "Browse files…", "pick folders/files for a partial clone", ActionSparseClone, 1},
-		actionItem{"", "Copy name", "owner/repo to the clipboard", ActionCopyName, 2},
-		actionItem{"", "Copy URL", "the https link to the clipboard", ActionCopyURL, 2},
-		actionItem{"", "Open in browser", "the repo's page on github.com", ActionOpenWeb, 2},
+		actionItem{"", "Clone branch…", "just the branch you pick", ActionCloneBranch, 1},
+		actionItem{"", "Browse files…", "preview, save or clone paths", ActionSparseClone, 1},
+		actionItem{"", "View README", "rendered, right here", ActionViewReadme, 1},
+		actionItem{"", "Releases…", "notes and asset downloads", ActionReleases, 1},
+		actionItem{"", "Copy name", "owner/repo to clipboard", ActionCopyName, 2},
+		actionItem{"", "Copy URL", "https link to clipboard", ActionCopyURL, 2},
+		actionItem{"", "Open in browser", "its page on github.com", ActionOpenWeb, 2},
 	)
+	if deletable(r) {
+		items = append(items,
+			actionItem{"", "Delete repository…", "on GitHub, cannot be undone", ActionDelete, 3})
+	}
 	for i := range items {
 		items[i].key = strconv.Itoa(i + 1)
 	}
@@ -87,6 +94,13 @@ func (a *App) chooseAction(act ActionType) (tea.Model, tea.Cmd) {
 		return a.enterTree()
 	case ActionCloneBranch:
 		return a.enterBranches()
+	case ActionViewReadme:
+		return a.enterReadme()
+	case ActionReleases:
+		return a.enterReleases()
+	case ActionDelete:
+		a.confirmReturn = screenActions
+		return a.enterConfirmDelete([]gh.Repo{a.selected})
 	}
 	a.Result = Result{
 		Action:    act,
@@ -132,12 +146,10 @@ func (a *App) actionsBody(includeSummary bool) string {
 	}
 	b.WriteString("\n")
 
-	// Align the dim hints into a column for easy scanning.
-	labelW := 0
+	labelW, keyW := 0, 0
 	for _, it := range a.actions {
-		if w := lipgloss.Width(it.label); w > labelW {
-			labelW = w
-		}
+		labelW = max(labelW, lipgloss.Width(it.label))
+		keyW = max(keyW, lipgloss.Width(it.key))
 	}
 
 	for i, it := range a.actions {
@@ -152,52 +164,59 @@ func (a *App) actionsBody(includeSummary bool) string {
 			label = selectedStyle.Render(label)
 		}
 		pad := strings.Repeat(" ", labelW-lipgloss.Width(it.label))
+		hint := dimStyle.Render(it.hint)
+		if it.act == ActionDelete {
+			label = errStyle.UnsetBold().Render(it.label)
+			if i == a.actionCursor {
+				label = errStyle.Render(it.label)
+			}
+		}
 		fmt.Fprintf(&b, "%s%s  %s%s   %s\n",
-			cursor, keyStyle.Render(it.key), label, pad, dimStyle.Render(it.hint))
+			cursor, padLeft(keyStyle.Render(it.key), keyW), label, pad, hint)
 	}
 
 	return b.String()
 }
 
-// detailColumn renders the right-hand column as two stacked cards — a compact
-// key/value info card and a description card — filling exactly h rows so it
-// bottom-aligns with the main panel beside it.
 func detailColumn(r gh.Repo, localPath string, w, h int) string {
+	inner := w - 4
 	kv := func(label, value string) string {
-		return dimStyle.Render(fmt.Sprintf("%-8s", label)) + value
+		return dimStyle.Render(fmt.Sprintf("%-9s", label)) + value
 	}
 	access := publicBadge.Render("public")
 	if r.IsPrivate {
 		access = privateBadge.Render("private")
 	}
-	lang, stars := dimStyle.Render("—"), dimStyle.Render("—")
+	facts := []string{kv("access", access)}
 	if r.Language != "" {
-		lang = r.Language
+		facts = append(facts, kv("language", langLabel(r.Language)))
 	}
 	if r.StargazerCount > 0 {
-		stars = fmt.Sprintf("★%d", r.StargazerCount)
+		facts = append(facts, kv("stars", starLabel(r.StargazerCount)))
 	}
-	info := kv("repo", titleStyle.Render(r.NameWithOwner)) + "\n" +
-		kv("access", access) + "\n" +
-		kv("lang", lang) + "\n" +
-		kv("stars", stars)
-
-	infoH := 6 // border (2) + 4 rows
+	if !r.UpdatedAt.IsZero() {
+		facts = append(facts, kv("updated", age(r.UpdatedAt, time.Now())))
+	}
 	if localPath != "" {
-		info += "\n" + kv("local", truncate(localPath, w-14))
-		infoH++
-	}
-	if h <= infoH+3 {
-		return panel("info", info, w, h, false)
+		facts = append(facts, kv("local", publicBadge.Render(truncate(localPath, inner-9))))
 	}
 
-	desc := r.Description
-	if desc == "" {
-		desc = "no description"
+	desc := dimStyle.Render("no description")
+	if r.Description != "" {
+		desc = lipgloss.NewStyle().Foreground(colFg).Width(inner).Render(r.Description)
 	}
-	wrapped := lipgloss.NewStyle().Foreground(colDim).Width(w - 4).Render(desc)
-	return panel("info", info, w, infoH, false) + "\n\n" +
-		panel("description", wrapped, w, h-infoH-1, false)
+	descLines := strings.Split(desc, "\n")
+	if room := h - 2 - len(facts) - 1; len(descLines) > room {
+		descLines = descLines[:max(room, 0)]
+		if room > 0 {
+			descLines[room-1] = truncate(descLines[room-1]+"…", inner)
+		}
+	}
+	body := strings.Join(descLines, "\n")
+	if len(descLines) > 0 {
+		body += "\n\n"
+	}
+	return panel(r.NameWithOwner, body+strings.Join(facts, "\n"), w, h, false)
 }
 
 // repoMeta renders the visibility badge plus language and star count.
@@ -207,10 +226,10 @@ func repoMeta(r gh.Repo) string {
 		meta = privateBadge.Render("private")
 	}
 	if r.Language != "" {
-		meta += dimStyle.Render(" · " + r.Language)
+		meta += dimStyle.Render(" · ") + langLabel(r.Language)
 	}
 	if r.StargazerCount > 0 {
-		meta += dimStyle.Render(fmt.Sprintf(" · ★%d", r.StargazerCount))
+		meta += dimStyle.Render(" · " + starLabel(r.StargazerCount))
 	}
 	return meta
 }

@@ -3,13 +3,13 @@ package ui
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/paginator"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/remcostoeten/gh-select/internal/gh"
-	"github.com/sahilm/fuzzy"
 )
 
 // repoItem adapts gh.Repo to the bubbles list item interface.
@@ -31,7 +31,8 @@ func (i repoItem) FilterValue() string {
 // is what tells two same-named repos apart.
 type compactDelegate struct {
 	bare   bool
-	locals map[string]string // "owner/repo" → working copy already on disk
+	locals map[string]string  // "owner/repo" → working copy already on disk
+	marked map[string]gh.Repo // "owner/repo" → marked for bulk deletion
 }
 
 func (compactDelegate) Height() int                         { return 1 }
@@ -43,33 +44,94 @@ func (d compactDelegate) Render(w io.Writer, m list.Model, index int, item list.
 		return
 	}
 	r := it.repo
+	width := m.Width()
 
-	label := r.NameWithOwner
-	if d.bare {
-		label = r.Name()
-	}
 	cursor := "  "
-	name := lipgloss.NewStyle().Foreground(colFg).Render(label)
+	nameStyle := lipgloss.NewStyle().Foreground(colFg)
+	if d.bare && !r.IsOwner {
+		nameStyle = dimStyle
+	}
 	if index == m.Index() {
 		cursor = selectedStyle.Render("❯ ")
-		name = selectedStyle.Render(label)
+		nameStyle = selectedStyle
 	}
 
-	meta := ""
+	// The mark column only exists once something is marked, so every row shifts
+	// together and an unmarked list keeps its original density.
+	mark := ""
+	if len(d.marked) > 0 {
+		mark = "  "
+		if _, ok := d.marked[r.NameWithOwner]; ok {
+			mark = errStyle.Render("✗ ")
+			nameStyle = errStyle.Strikethrough(true)
+		}
+	}
+
+	cols := d.columns(m.Items())
+	right := ""
+	if cols.lang+cols.stars > 0 && width >= 48 {
+		right = "  " + padRight(langLabel(r.Language), cols.lang) + "  " +
+			padLeft(dimStyle.Render(starLabel(r.StargazerCount)), cols.stars)
+	}
+
+	prefix := cursor + mark
+	leftW := width - lipgloss.Width(right)
+	nameW := max(min(cols.name, leftW-lipgloss.Width(prefix)-cols.tags), 8)
+	left := prefix + padRight(nameStyle.Render(truncate(d.label(r), nameW)), nameW) + d.tags(r)
+	fmt.Fprint(w, padRight(left, leftW)+right)
+}
+
+func (d compactDelegate) label(r gh.Repo) string {
+	if d.bare {
+		return r.Name()
+	}
+	return r.NameWithOwner
+}
+
+func (d compactDelegate) tags(r gh.Repo) string {
+	var out string
 	if _, cloned := d.locals[r.NameWithOwner]; cloned {
-		meta += dimStyle.Render(" · ") + publicBadge.Render("local")
+		out += " " + publicBadge.Render("local")
 	}
 	if r.IsPrivate {
-		meta += dimStyle.Render(" · ") + privateBadge.Render("private")
+		out += " " + privateBadge.Render("private")
 	}
-	if r.Language != "" {
-		meta += dimStyle.Render(" · " + r.Language)
+	if out != "" {
+		out = " " + out
 	}
-	if r.StargazerCount > 0 {
-		meta += dimStyle.Render(fmt.Sprintf(" · ★%d", r.StargazerCount))
-	}
+	return out
+}
 
-	fmt.Fprint(w, truncate(cursor+name+meta, m.Width()))
+type rowColumns struct{ name, tags, lang, stars int }
+
+func (d compactDelegate) columns(items []list.Item) rowColumns {
+	var c rowColumns
+	for _, item := range items {
+		it, ok := item.(repoItem)
+		if !ok {
+			continue
+		}
+		c.name = max(c.name, lipgloss.Width(d.label(it.repo)))
+		c.tags = max(c.tags, lipgloss.Width(d.tags(it.repo)))
+		c.lang = max(c.lang, lipgloss.Width(langLabel(it.repo.Language)))
+		c.stars = max(c.stars, lipgloss.Width(starLabel(it.repo.StargazerCount)))
+	}
+	c.lang = min(c.lang, 16)
+	return c
+}
+
+func padRight(s string, w int) string {
+	if gap := w - lipgloss.Width(s); gap > 0 {
+		return s + strings.Repeat(" ", gap)
+	}
+	return truncate(s, w)
+}
+
+func padLeft(s string, w int) string {
+	if gap := w - lipgloss.Width(s); gap > 0 {
+		return strings.Repeat(" ", gap) + s
+	}
+	return s
 }
 
 func newRepoList(repos []gh.Repo, width, height int) list.Model {
@@ -89,24 +151,6 @@ func repoItems(repos []gh.Repo) []list.Item {
 	items := make([]list.Item, len(repos))
 	for i, r := range repos {
 		items[i] = repoItem{repo: r}
-	}
-	return items
-}
-
-// filterRepos returns the list items matching query, fuzzy-ranked by relevance.
-// An empty query yields every repo in its original order.
-func filterRepos(repos []gh.Repo, query string) []list.Item {
-	if query == "" {
-		return repoItems(repos)
-	}
-	hay := make([]string, len(repos))
-	for i, r := range repos {
-		hay[i] = r.NameWithOwner + " " + r.Description
-	}
-	matches := fuzzy.Find(query, hay)
-	items := make([]list.Item, 0, len(matches))
-	for _, m := range matches {
-		items = append(items, repoItem{repo: repos[m.Index]})
 	}
 	return items
 }

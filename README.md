@@ -68,21 +68,63 @@ gh select
 
 1. **Find a repo** — type to fuzzy-filter your repositories. The list loads
    instantly from cache and refreshes in the background.
+   - `tab` switches between your repos, your **starred** repos and a search
+     of all of GitHub
+   - `ctrl+s` sorts by recent, stars or name
+   - filter with tokens in the search: `lang:go`, `is:private`, `is:public`,
+     `is:local` (cloned on this machine) and `is:mine`, e.g.
+     `cli lang:go is:mine`
+   - `?` on an empty search shows every key
 2. **Choose an action:**
    - Clone repository (full)
    - **Browse & partial clone** — open the codebase tree
+   - **Releases** — read release notes and download assets: the build for
+     your OS/CPU is preselected, downloads are checksum-verified, and `x`
+     unpacks archives (`--download-dir` / `GH_SELECT_DOWNLOAD_DIR` sets where
+     they land)
    - Copy repository name / URL
    - Open in browser
+   - **Delete repository** (repositories you own)
+
+### Deleting repositories
+
+In the repository list, `ctrl+x` marks a repository and `ctrl+d` opens a
+confirmation screen for everything marked — so a batch of dead repos goes in
+one pass. A single repository can also be deleted from its action menu.
+
+Deletion is permanent and has no undo, so it is gated:
+
+- only repositories **you own** can be marked or deleted
+- the confirmation screen lists exactly what will go, and you must retype a
+  phrase — the repository's name for one, `DELETE <n>` for a batch
+- local working copies are never removed, only reported
+
+GitHub requires an extra scope for this, which `gh auth login` doesn't grant:
+
+```bash
+gh auth refresh -s delete_repo
+```
 
 ### Browse & partial clone
 
 Inside the tree browser you can navigate the entire repository **without
-cloning it**:
+cloning it**. This works for any public repository, not just yours: press `tab`
+in the list to reach your starred repos or search GitHub, pick a repo, then
+**Browse files…**.
 
-- `↑/↓` move · `→` open a folder or preview a file · `←` go up
-- `/` filter the current directory · `space` mark a folder (multi-select)
-- `c` clone — performs a partial clone (`--filter=blob:none --sparse`) that
-  downloads only the folders you selected
+- `↑/↓` move · `→` open a folder or preview a file (markdown is rendered,
+  code is highlighted) · `←` go up
+- `/` filter the current directory · `space` mark files or folders
+- `c` clone: a partial clone (`--filter=blob:none --sparse`) of only what you
+  marked
+- `s` save without git: the marked files and folders, or the highlighted one.
+  A single file lands directly in the download directory, several keep their
+  paths under a folder named after the repo. Existing files are never
+  overwritten.
+- `y` copy the highlighted or previewed file's contents to the clipboard
+- `b` browse another branch or tag; saving, copying and `c` then use it too
+- `o` open the file or folder on github.com · `Y` copy a permalink pinned to
+  the current commit · `r` copy the file's raw download URL
 
 ### Options
 
@@ -97,7 +139,9 @@ gh select doctor             # check tools + authentication
 ```
 
 Environment: `GH_SELECT_CACHE_TTL` (seconds) controls cache freshness
-(default 1800); `GH_SELECT_CLONE_DIR` sets the clone root.
+(default 1800); `GH_SELECT_CLONE_DIR` sets the clone root;
+`GH_SELECT_DOWNLOAD_DIR` (or `--download-dir`) sets where release assets and
+saved files land.
 
 ### A clone directory
 

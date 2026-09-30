@@ -115,6 +115,7 @@ func TestScopeToggle(t *testing.T) {
 		t.Fatalf("initial: scope=%v items=%d", a.scope, len(a.list.Items()))
 	}
 
+	a = send(t, a, tea.KeyMsg{Type: tea.KeyTab}) // -> starred
 	a = send(t, a, tea.KeyMsg{Type: tea.KeyTab}) // -> GitHub scope, empty query
 	if a.scope != scopeGitHub {
 		t.Fatalf("scope = %v, want GitHub", a.scope)
@@ -143,6 +144,7 @@ func TestScopeToggle(t *testing.T) {
 func TestRemoteResultsStaleGuard(t *testing.T) {
 	a := NewApp(nil, sampleRepos, false, nil, "test")
 	a = send(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+	a = send(t, a, tea.KeyMsg{Type: tea.KeyTab}) // -> starred
 	a = send(t, a, tea.KeyMsg{Type: tea.KeyTab})
 	a = send(t, a, key("linux"))
 
@@ -252,15 +254,29 @@ func TestBranchPicker(t *testing.T) {
 
 // Syntax highlighting wraps source in ANSI escapes without dropping content.
 func TestHighlightPreview(t *testing.T) {
-	out := renderPreview("main.go", []byte("package main\n\nfunc main() {}\n"))
+	out := renderPreview("main.go", []byte("package main\n\nfunc main() {}\n"), 80)
 	if !strings.Contains(out, "\x1b[") {
 		t.Error("expected ANSI escape codes from highlighting")
 	}
 	if !strings.Contains(out, "main") {
 		t.Error("highlighted output dropped source text")
 	}
-	if got := renderPreview("x.bin", []byte{0x00, 0x01}); !strings.Contains(got, "binary") {
+	if got := renderPreview("x.bin", []byte{0x00, 0x01}, 80); !strings.Contains(got, "binary") {
 		t.Errorf("binary guard missing: %q", got)
+	}
+}
+
+// Markdown previews are rendered as prose: the syntax markers are consumed and
+// the text survives.
+func TestMarkdownPreview(t *testing.T) {
+	out := renderPreview("README.md", []byte("# Title\n\nSome **bold** text.\n"), 60)
+	if strings.Contains(out, "**bold**") {
+		t.Errorf("markdown left unrendered: %q", out)
+	}
+	for _, want := range []string{"Title", "bold", "text"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered markdown dropped %q: %q", want, out)
+		}
 	}
 }
 
@@ -285,6 +301,18 @@ func TestViewsDoNotPanic(t *testing.T) {
 
 	a = send(t, a, key("enter")) // drill into src
 	mustRender(t, a, "tree-nested")
+
+	a.screen = screenActions
+	a = send(t, a, actionKey(t, a, ActionViewReadme))
+	mustRender(t, a, "readme-loading")
+
+	a = send(t, a, readmeLoadedMsg{path: "README.md", content: []byte("# Hi\n\ntext\n")})
+	mustRender(t, a, "readme")
+
+	a = send(t, a, key("esc"))
+	if a.screen != screenActions {
+		t.Errorf("esc from readme went to screen %v, want actions", a.screen)
+	}
 }
 
 func mustRender(t *testing.T, a *App, name string) {
@@ -365,6 +393,7 @@ func TestBranchErrorSurfaced(t *testing.T) {
 func TestSearchKeepsStaleResults(t *testing.T) {
 	a := NewApp(nil, sampleRepos, false, nil, "test")
 	a = send(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+	a = send(t, a, tea.KeyMsg{Type: tea.KeyTab}) // -> starred
 	a = send(t, a, tea.KeyMsg{Type: tea.KeyTab})
 	a = send(t, a, key("linux"))
 	a = send(t, a, remoteReposMsg{query: "linux", repos: []gh.Repo{{NameWithOwner: "torvalds/linux"}}})
@@ -392,6 +421,7 @@ func TestListOwnerPrefixByScope(t *testing.T) {
 		t.Error("my-repos list lost the repo name")
 	}
 
+	a = send(t, a, tea.KeyMsg{Type: tea.KeyTab}) // -> starred
 	a = send(t, a, tea.KeyMsg{Type: tea.KeyTab})
 	a = send(t, a, key("linux"))
 	a = send(t, a, remoteReposMsg{query: "linux", repos: []gh.Repo{{NameWithOwner: "torvalds/linux"}}})
@@ -491,5 +521,39 @@ func TestPrintPathMode(t *testing.T) {
 	}
 	if a.Result.Action != ActionPrintPath || a.Result.LocalPath != "/src/alpha" {
 		t.Fatalf("result = %v %q", a.Result.Action, a.Result.LocalPath)
+	}
+}
+
+func TestListHelpToggle(t *testing.T) {
+	a := NewApp(nil, sampleRepos, false, nil, "test")
+	a = send(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+	a = send(t, a, key("?"))
+	if !a.listHelp || !strings.Contains(a.View(), "Repository list keys") {
+		t.Fatal("help overlay not shown")
+	}
+	a = send(t, a, key("?"))
+	if a.listHelp {
+		t.Fatal("help overlay did not close")
+	}
+	a = send(t, a, key("x"))
+	a = send(t, a, key("?"))
+	if a.listHelp || a.query != "x?" {
+		t.Errorf("? mid-query: help=%v query=%q", a.listHelp, a.query)
+	}
+}
+
+func TestFitHintsDropsWholeHints(t *testing.T) {
+	keys := keyHint([2]string{"enter", "select"}, [2]string{"tab", "search GitHub"}, [2]string{"^C", "quit"})
+	got := fitHints(keys, 30)
+	if strings.Contains(got, "tab") || !strings.Contains(got, "quit") || strings.Contains(got, "…") {
+		t.Errorf("fitHints = %q", got)
+	}
+}
+
+func TestShortCount(t *testing.T) {
+	for n, want := range map[int]string{12: "12", 1000: "1k", 1234: "1.2k", 45678: "45k", 2_300_000: "2.3M"} {
+		if got := shortCount(n); got != want {
+			t.Errorf("shortCount(%d) = %q, want %q", n, got, want)
+		}
 	}
 }

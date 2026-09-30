@@ -49,8 +49,25 @@ func (c *Client) FetchTree(nameWithOwner, ref string) (*Tree, error) {
 }
 
 type contentResponse struct {
+	Path     string `json:"path"`
 	Content  string `json:"content"`
 	Encoding string `json:"encoding"`
+	SHA      string `json:"sha"`
+}
+
+// FetchReadme returns the repository's readme and its path. GitHub resolves
+// which file that is (any casing, any extension, docs/ or .github/ fallbacks),
+// so no guessing is needed here.
+func (c *Client) FetchReadme(nameWithOwner string) (path string, content []byte, err error) {
+	var resp contentResponse
+	if err := c.rest.Get(fmt.Sprintf("repos/%s/readme", nameWithOwner), &resp); err != nil {
+		return "", nil, err
+	}
+	if resp.Encoding == "base64" {
+		decoded, err := base64.StdEncoding.DecodeString(resp.Content)
+		return resp.Path, decoded, err
+	}
+	return resp.Path, []byte(resp.Content), nil
 }
 
 // FetchFile returns the decoded contents of a single file at ref.
@@ -64,8 +81,20 @@ func (c *Client) FetchFile(nameWithOwner, ref, filePath string) ([]byte, error) 
 	if err := c.rest.Get(p, &resp); err != nil {
 		return nil, err
 	}
-	if resp.Encoding == "base64" {
+	switch resp.Encoding {
+	case "base64":
 		return base64.StdEncoding.DecodeString(resp.Content)
+	case "none":
+		// The contents API leaves files over 1 MB empty; the blob API serves up to 100 MB.
+		return c.fetchBlob(nameWithOwner, resp.SHA)
 	}
 	return []byte(resp.Content), nil
+}
+
+func (c *Client) fetchBlob(nameWithOwner, sha string) ([]byte, error) {
+	var resp contentResponse
+	if err := c.rest.Get(fmt.Sprintf("repos/%s/git/blobs/%s", nameWithOwner, sha), &resp); err != nil {
+		return nil, err
+	}
+	return base64.StdEncoding.DecodeString(resp.Content)
 }

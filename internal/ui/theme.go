@@ -142,6 +142,10 @@ func SetBorder(name string) error {
 // The active colors and styles. Everything below is (re)assigned by
 // applyPalette so a theme switch takes effect across the whole UI.
 var (
+	// activePalette backs renderers that need raw hex colors rather than
+	// lipgloss styles (the markdown renderer).
+	activePalette palette
+
 	colBg, colFg, colDim, colHL, colCyan, colBlue lipgloss.AdaptiveColor
 	colGreen, colPink, colYellow, colRed          lipgloss.AdaptiveColor
 
@@ -170,6 +174,7 @@ var (
 )
 
 func applyPalette(p palette) {
+	activePalette = p
 	colBg = p.bg
 	colFg, colDim, colHL = p.fg, p.dim, p.hl
 	colCyan, colBlue, colGreen = p.cyan, p.blue, p.green
