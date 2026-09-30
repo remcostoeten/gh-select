@@ -16,8 +16,9 @@ import (
 type searchScope int
 
 const (
-	scopeMine   searchScope = iota // fuzzy-filter the viewer's cached repos
-	scopeGitHub                    // query the GitHub search API for any repo
+	scopeMine    searchScope = iota // fuzzy-filter the viewer's cached repos
+	scopeStarred                    // fuzzy-filter the viewer's starred repos
+	scopeGitHub                     // query the GitHub search API for any repo
 )
 
 // searchDebounce is how long typing must pause before a GitHub search fires,
@@ -33,18 +34,31 @@ const (
 	ActionClone
 	ActionCloneBranch // opens the branch picker; resolves to ActionClone
 	ActionSparseClone
+	ActionViewReadme // opens the rendered readme inside the TUI
+	ActionReleases   // opens the releases browser; resolves to ActionDownload
 	ActionCopyName
 	ActionCopyURL
 	ActionOpenWeb
+	ActionOpenEditor // open the local clone in $EDITOR, cloning first if needed
+	ActionPull       // fast-forward an existing local clone
+	ActionPrintPath  // print the local path for a shell wrapper to cd into
+	ActionDelete     // permanently delete the repositories in Result.Deletes
+	ActionDownload   // download Result.Assets of release Result.Release
 )
 
 // Result is what the program should do once the TUI returns.
 type Result struct {
-	Action  ActionType
-	Repo    gh.Repo
-	Branch  string   // non-empty to clone a specific branch
-	Folders []string // selected folders, for ActionSparseClone
-	Files   []string // selected individual files, for ActionSparseClone
+	Action    ActionType
+	Repo      gh.Repo
+	Branch    string     // non-empty to clone a specific branch
+	Folders   []string   // selected folders, for ActionSparseClone
+	Files     []string   // selected individual files, for ActionSparseClone
+	LocalPath string     // existing working copy, when the repo is already cloned
+	Deletes   []gh.Repo  // repositories confirmed for deletion, for ActionDelete
+	Release   string     // release tag, for ActionDownload
+	Assets    []gh.Asset // release assets to download, for ActionDownload
+	Checksums []gh.Asset // the release's checksum files, to verify Assets against
+	Extract   bool       // unpack downloaded archives, for ActionDownload
 }
 
 type screen int
@@ -54,6 +68,9 @@ const (
 	screenActions
 	screenBranches
 	screenTree
+	screenReadme
+	screenConfirmDelete
+	screenReleases
 )
 
 // Messages emitted by background commands.
@@ -66,6 +83,10 @@ type errMsg struct{ err error }
 type debounceMsg struct{ seq int }
 type remoteReposMsg struct {
 	query string
+	repos []gh.Repo
+	err   error
+}
+type starredLoadedMsg struct {
 	repos []gh.Repo
 	err   error
 }
@@ -90,9 +111,32 @@ type App struct {
 	scope     searchScope
 	searchSeq int  // increments per keystroke; guards stale debounce/results
 	searching bool // a GitHub search request is in flight
+	remote    []gh.Repo
+	sortBy    sortOrder
+
+	starred        []gh.Repo
+	starredSave    func([]gh.Repo)
+	starredFetched bool // fetched this session, so tab doesn't refetch
+	starredLoading bool
 
 	// action menu
 	actionCursor int
+	actions      []actionItem // rebuilt per repo: local clones get extra entries
+
+	// local clones, keyed by "owner/repo"; empty when no clone dir is set
+	locals    map[string]string
+	printPath bool // select-and-print mode: enter returns a path, no action menu
+	saveDir   string
+
+	// bulk selection for deletion, keyed by "owner/repo"
+	marked   map[string]gh.Repo
+	markNote string
+
+	listHelp bool
+
+	// retype-to-confirm delete screen; confirmReturn is the screen esc goes back to
+	confirm       *confirmModel
+	confirmReturn screen
 
 	// branch picker
 	picker        *pickerModel
@@ -100,6 +144,12 @@ type App struct {
 
 	// tree browser
 	tree *treeModel
+
+	// readme reader
+	readme *readmeModel
+
+	// release browser
+	releases *releasesModel
 
 	spinner spinner.Model
 	loading bool
@@ -124,20 +174,82 @@ func NewApp(client *gh.Client, initial []gh.Repo, refresh bool, saveFn func([]gh
 		version: version,
 		screen:  screenList,
 		repos:   initial,
+		marked:  map[string]gh.Repo{},
 		spinner: sp,
 		loading: refresh,
 		width:   80,
 		height:  24,
 	}
-	a.list = newRepoList(initial, a.width, a.height-chromeLines-searchBoxLines)
+	lw, lh := a.listPanelSize()
+	a.list = newRepoList(initial, lw-4, lh-2)
+	a.refreshDelegate()
 	return a
 }
 
-// applyFilter recomputes the visible repo items for the current query and
-// resets the selection to the top match.
+// refreshDelegate rebuilds the row renderer so it sees the current scope and
+// the live locals/marked maps.
+func (a *App) refreshDelegate() {
+	a.list.SetDelegate(compactDelegate{
+		bare:   a.scope == scopeMine,
+		locals: a.locals,
+		marked: a.marked,
+	})
+}
+
+// SetLocalClones tells the UI which repos already exist on disk, keyed by
+// "owner/repo", so they can be badged and offered "open" over "clone".
+func (a *App) SetLocalClones(locals map[string]string) {
+	a.locals = locals
+	a.refreshDelegate()
+}
+
+// SetPrintPath switches the app into select-and-print mode, where choosing a
+// repo returns its path instead of opening the action menu.
+func (a *App) SetPrintPath(on bool) { a.printPath = on }
+
+// SetSaveDir sets where files saved from the tree browser land; "" means the
+// current directory.
+func (a *App) SetSaveDir(dir string) { a.saveDir = dir }
+
+// localPath is the working copy for a repo, or "" when it isn't cloned.
+func (a *App) localPath(nameWithOwner string) string { return a.locals[nameWithOwner] }
+
+// listPanelSize is the outer size of the repo list panel: the content column
+// minus the details column, and the body height minus the search panel.
+func (a *App) listPanelSize() (w, h int) {
+	main, _ := splitWidths(contentWidth(a.width))
+	return main, a.height - chromeLines - searchBoxLines
+}
+
+// SetStarred seeds the starred scope from cache and sets how a fresh fetch
+// is persisted.
+func (a *App) SetStarred(cached []gh.Repo, save func([]gh.Repo)) {
+	a.starred, a.starredSave = cached, save
+}
+
+// applyFilter recomputes the visible repo items for the current scope, query
+// and sort, and resets the selection to the top match.
 func (a *App) applyFilter() {
-	a.list.SetItems(filterRepos(a.repos, a.query))
+	switch a.scope {
+	case scopeMine:
+		a.list.SetItems(listRepos(a.repos, a.query, a.locals, a.sortBy, true))
+	case scopeStarred:
+		a.list.SetItems(listRepos(a.starred, a.query, a.locals, a.sortBy, true))
+	case scopeGitHub:
+		if a.query == "" {
+			a.list.SetItems(nil)
+		} else {
+			a.list.SetItems(listRepos(a.remote, a.query, a.locals, a.sortBy, false))
+		}
+	}
 	a.list.Select(0)
+}
+
+func (a *App) fetchStarredCmd() tea.Cmd {
+	return func() tea.Msg {
+		repos, err := a.client.FetchStarred()
+		return starredLoadedMsg{repos: repos, err: err}
+	}
 }
 
 // debounceSearchCmd schedules a debounceMsg tagged with the current sequence
@@ -152,29 +264,35 @@ func (a *App) debounceSearchCmd() tea.Cmd {
 // remoteSearchCmd performs a GitHub repository search off the UI goroutine.
 func (a *App) remoteSearchCmd(query string) tea.Cmd {
 	return func() tea.Msg {
-		repos, err := a.client.SearchRepos(query)
+		repos, err := a.client.SearchRepos(githubQuery(query))
 		return remoteReposMsg{query: query, repos: repos, err: err}
 	}
 }
 
-// toggleScope flips between filtering the viewer's repos and searching all of
-// GitHub, re-applying the current query under the new scope.
+// toggleScope steps to the next scope (my repos, starred, GitHub) and
+// re-applies the current query there. Starred repos are fetched on the first
+// visit of a session, showing the cached list meanwhile.
 func (a *App) toggleScope() (tea.Model, tea.Cmd) {
+	return a.setScope((a.scope + 1) % 3)
+}
+
+func (a *App) setScope(next searchScope) (tea.Model, tea.Cmd) {
 	a.status = ""
-	if a.scope == scopeMine {
-		a.scope = scopeGitHub
-		a.searchSeq++
-		if a.query == "" {
-			a.list.SetItems(nil) // wait for input before hitting the API
-			return a, nil
-		}
+	a.scope = next
+	a.sortBy = sortDefault
+	a.searching = false
+	a.searchSeq++ // invalidate any in-flight GitHub response
+	a.refreshDelegate()
+	a.remote = nil
+	a.applyFilter()
+	switch {
+	case next == scopeStarred && !a.starredFetched && a.client != nil:
+		a.starredFetched, a.starredLoading = true, true
+		return a, tea.Batch(a.fetchStarredCmd(), a.spinner.Tick)
+	case next == scopeGitHub && a.query != "":
 		a.searching = true
 		return a, tea.Batch(a.remoteSearchCmd(a.query), a.spinner.Tick)
 	}
-	a.scope = scopeMine
-	a.searching = false
-	a.searchSeq++ // invalidate any in-flight GitHub response
-	a.applyFilter()
 	return a, nil
 }
 
@@ -182,7 +300,7 @@ func (a *App) toggleScope() (tea.Model, tea.Cmd) {
 // instant local fuzzy filtering, or a debounced GitHub search.
 func (a *App) editQuery(next string) (tea.Model, tea.Cmd) {
 	a.query = next
-	if a.scope == scopeMine {
+	if a.scope != scopeGitHub {
 		a.applyFilter()
 		return a, nil
 	}
@@ -205,7 +323,9 @@ func (a *App) Init() tea.Cmd {
 // anyLoading reports whether any screen is awaiting a network fetch (used to
 // keep the spinner ticking only while needed).
 func (a *App) anyLoading() bool {
-	return a.loading || a.searching || a.branchLoading || (a.tree != nil && a.tree.loading)
+	return a.loading || a.searching || a.branchLoading || a.starredLoading ||
+		(a.tree != nil && (a.tree.loading || a.tree.refLoading)) || (a.readme != nil && a.readme.loading) ||
+		(a.releases != nil && (a.releases.loading || a.releases.readerLoading))
 }
 
 // enterBranches opens the branch picker, fetching the repo's branches.
@@ -275,9 +395,16 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		a.width, a.height = msg.Width, msg.Height
-		a.list.SetSize(msg.Width, msg.Height-chromeLines-searchBoxLines)
+		lw, lh := a.listPanelSize()
+		a.list.SetSize(lw-4, lh-2)
 		if a.tree != nil {
 			a.tree.setSize(msg.Width, msg.Height)
+		}
+		if a.readme != nil {
+			a.readme.setSize(msg.Width, msg.Height)
+		}
+		if a.releases != nil {
+			a.releases.setSize(msg.Width, msg.Height)
 		}
 		return a, nil
 
@@ -288,7 +415,24 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.saveFn(msg.repos)
 		}
 		a.repos = msg.repos
-		a.applyFilter() // keep any active search applied to the fresh data
+		if a.scope == scopeMine {
+			a.applyFilter() // keep any active search applied to the fresh data
+		}
+		return a, nil
+
+	case starredLoadedMsg:
+		a.starredLoading = false
+		if msg.err != nil {
+			a.status = "Couldn't load starred repos: " + msg.err.Error()
+			return a, nil
+		}
+		a.starred = msg.repos
+		if a.starredSave != nil {
+			a.starredSave(msg.repos)
+		}
+		if a.scope == scopeStarred {
+			a.applyFilter()
+		}
 		return a, nil
 
 	case errMsg:
@@ -322,18 +466,44 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		a.status = ""
-		a.list.SetItems(repoItems(msg.repos))
-		a.list.Select(0)
+		a.remote = msg.repos
+		a.applyFilter()
 		return a, nil
 
 	case branchesLoadedMsg:
 		a.branchLoading = false
 		if msg.err != nil {
-			// Non-fatal: report and drop back to the action menu.
+			// Non-fatal: drop back to the action menu with the failure visible in
+			// the status line, so the bounce-back is explained.
+			a.status = "Couldn't load branches: " + msg.err.Error()
 			a.screen = screenActions
 			return a, nil
 		}
 		a.picker = newPicker(msg.branches)
+		return a, nil
+
+	case readmeLoadedMsg:
+		if a.readme != nil {
+			a.readme.loaded(msg)
+		}
+		return a, nil
+
+	case releasesLoadedMsg:
+		if a.releases != nil {
+			a.releases.loaded(msg)
+		}
+		return a, nil
+
+	case releasesStatusMsg:
+		if a.releases != nil {
+			a.releases.status = msg.text
+		}
+		return a, nil
+
+	case assetPreviewMsg:
+		if a.releases != nil {
+			a.releases.previewLoaded(msg)
+		}
 		return a, nil
 	}
 
@@ -346,6 +516,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.updateBranches(msg)
 	case screenTree:
 		return a.updateTree(msg)
+	case screenReadme:
+		return a.updateReadme(msg)
+	case screenConfirmDelete:
+		return a.updateConfirmDelete(msg)
+	case screenReleases:
+		return a.updateReleases(msg)
 	}
 	return a, nil
 }
@@ -358,16 +534,51 @@ func (a *App) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, cmd
 	}
 
+	if a.listHelp {
+		switch key.String() {
+		case "ctrl+c":
+			return a, tea.Quit
+		case "?", "esc", "q", "enter":
+			a.listHelp = false
+		}
+		return a, nil
+	}
+
 	switch key.String() {
 	case "ctrl+c":
 		return a, tea.Quit
+	case "?":
+		if a.query == "" {
+			a.listHelp = true
+			return a, nil
+		}
 	case "tab":
 		return a.toggleScope()
+	case "ctrl+s":
+		a.sortBy = nextSort(a.sortBy, a.scope)
+		a.applyFilter()
+		return a, nil
+	case "ctrl+x":
+		// ctrl-prefixed, because bare keys are search input on this screen.
+		return a.toggleMark()
+	case "ctrl+d":
+		a.confirmReturn = screenList
+		return a.enterConfirmDelete(a.markedRepos())
 	case "enter":
 		if it, ok := a.list.SelectedItem().(repoItem); ok {
 			a.selected = it.repo
+			if a.printPath {
+				a.Result = Result{
+					Action:    ActionPrintPath,
+					Repo:      it.repo,
+					LocalPath: a.localPath(it.repo.NameWithOwner),
+				}
+				return a, tea.Quit
+			}
 			a.screen = screenActions
+			a.actions = a.menuFor(it.repo)
 			a.actionCursor = 0
+			a.status = ""
 		}
 		return a, nil
 	case "esc":
@@ -376,8 +587,8 @@ func (a *App) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.query != "" {
 			return a.editQuery("")
 		}
-		if a.scope == scopeGitHub {
-			return a.toggleScope()
+		if a.scope != scopeMine {
+			return a.setScope(scopeMine)
 		}
 		return a, tea.Quit
 	case "backspace":
@@ -388,6 +599,7 @@ func (a *App) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case "up", "down", "pgup", "pgdown", "home", "end":
 		// Navigation keys move the selection; everything else is search input.
+		a.markNote = ""
 		var cmd tea.Cmd
 		a.list, cmd = a.list.Update(msg)
 		return a, cmd
@@ -401,6 +613,7 @@ func (a *App) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (a *App) enterTree() (tea.Model, tea.Cmd) {
 	a.tree = newTreeModel(a.client, a.selected, a.width, a.height)
+	a.tree.saveDir = a.saveDir
 	a.screen = screenTree
 	return a, tea.Batch(a.tree.fetchTreeCmd(), a.spinner.Tick)
 }
@@ -420,112 +633,269 @@ func (a *App) updateTree(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.tree.status = "select at least one folder or file (space) before cloning"
 			return a, nil
 		}
-		a.Result = Result{Action: ActionSparseClone, Repo: a.selected, Folders: folders, Files: files}
+		a.Result = Result{Action: ActionSparseClone, Repo: a.selected, Branch: a.tree.ref, Folders: folders, Files: files}
 		return a, tea.Quit
 	}
 	return a, cmd
 }
 
+func (a *App) enterReadme() (tea.Model, tea.Cmd) {
+	a.readme = newReadmeModel(a.client, a.selected, a.width, a.height)
+	a.screen = screenReadme
+	a.status = ""
+	return a, tea.Batch(a.readme.fetchCmd(), a.spinner.Tick)
+}
+
+func (a *App) updateReadme(msg tea.Msg) (tea.Model, tea.Cmd) {
+	key, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return a, nil
+	}
+	switch key.String() {
+	case "ctrl+c":
+		return a, tea.Quit
+	case "esc", "q", "left", "h", "backspace":
+		a.screen = screenActions
+		return a, nil
+	}
+	var cmd tea.Cmd
+	a.readme.view, cmd = a.readme.view.Update(msg)
+	return a, cmd
+}
+
+func (a *App) enterReleases() (tea.Model, tea.Cmd) {
+	a.releases = newReleasesModel(a.client, a.selected, a.width, a.height)
+	a.screen = screenReleases
+	a.status = ""
+	return a, tea.Batch(a.releases.fetchCmd(), a.spinner.Tick)
+}
+
+func (a *App) updateReleases(msg tea.Msg) (tea.Model, tea.Cmd) {
+	cmd, outcome := a.releases.update(msg)
+	switch outcome {
+	case releasesQuit:
+		return a, tea.Quit
+	case releasesBack:
+		a.screen = screenActions
+		return a, nil
+	case releasesDownload:
+		rel, _ := a.releases.current()
+		a.Result = Result{
+			Action:    ActionDownload,
+			Repo:      a.selected,
+			Release:   rel.TagName,
+			Assets:    a.releases.chosen(),
+			Checksums: a.releases.checksumAssets(),
+			Extract:   a.releases.extract,
+		}
+		return a, tea.Quit
+	}
+	if cmd != nil && a.releases.readerLoading {
+		return a, tea.Batch(cmd, a.spinner.Tick)
+	}
+	return a, cmd
+}
+
 func (a *App) View() string {
+	return paintBackground(a.view(), a.width)
+}
+
+func (a *App) view() string {
 	if a.err != nil {
 		return errStyle.Render("Error: "+a.err.Error()) + "\n"
 	}
 	switch a.screen {
 	case screenActions:
+		status := ""
+		if a.status != "" {
+			status = statusStyle.Render(a.status)
+		}
 		return compose(a.width, a.height, a.version,
-			a.selected.NameWithOwner, a.viewActions(), actionsFooter)
+			a.selected.NameWithOwner, a.viewActions(), status, a.actionsFooter())
 	case screenBranches:
 		return a.viewBranches()
 	case screenTree:
-		context, body, keys := a.tree.chromeParts(a.spinner.View(), a.height-chromeLines)
-		return compose(a.width, a.height, a.version, context, body, keys)
+		context, body, status, keys := a.tree.chromeParts(a.spinner.View(), a.height-chromeLines)
+		return compose(a.width, a.height, a.version, context, body, status, keys)
+	case screenReadme:
+		context, body, status, keys := a.readme.chromeParts(a.spinner.View(), a.width, a.height-chromeLines)
+		return compose(a.width, a.height, a.version, context, body, status, keys)
+	case screenConfirmDelete:
+		return a.viewConfirmDelete()
+	case screenReleases:
+		context, body, status, keys := a.releases.chromeParts(a.spinner.View(), a.height-chromeLines)
+		return compose(a.width, a.height, a.version, context, body, status, keys)
 	default:
-		return compose(a.width, a.height, a.version, a.listContext(), a.viewList(), a.listFooter())
+		return compose(a.width, a.height, a.version,
+			"", a.viewList(), a.listStatus(), a.listFooter())
 	}
 }
 
-// listContext is the right-hand header text for the repo list: the active scope
-// and a result count. The live query itself lives in the search box below.
-func (a *App) listContext() string {
-	if a.scope == scopeGitHub {
-		if a.query == "" {
-			return contextStyle.Render("GitHub")
-		}
-		return contextStyle.Render("GitHub") + dimStyle.Render(fmt.Sprintf(" · %d", len(a.list.Items())))
+// listPanelTitle names the repo panel with the active scope, result count, and
+// how many repos are marked for deletion (marks survive scope and query
+// changes, so the count has to stay visible).
+func (a *App) listPanelTitle() string {
+	names := map[searchScope]string{scopeMine: "my repos", scopeStarred: "starred", scopeGitHub: "github"}
+	title := names[a.scope]
+	total := len(a.repos)
+	if a.scope == scopeStarred {
+		total = len(a.starred)
 	}
-	if a.query == "" {
-		return dimStyle.Render(fmt.Sprintf("My repos · %d", len(a.repos)))
+	switch {
+	case a.scope == scopeGitHub && a.query == "":
+	case a.scope == scopeGitHub:
+		title += fmt.Sprintf(" · %d", len(a.list.Items()))
+	case a.query == "":
+		title += fmt.Sprintf(" · %d", total)
+	default:
+		title += fmt.Sprintf(" · %d/%d", len(a.list.Items()), total)
 	}
-	return dimStyle.Render("My repos · ") + fmt.Sprintf("%d/%d", len(a.list.Items()), len(a.repos))
+	if a.sortBy != sortDefault {
+		title += " · by " + sortLabel(a.sortBy, a.scope)
+	}
+	if n := len(a.marked); n > 0 {
+		title += fmt.Sprintf(" · %d to delete", n)
+	}
+	return title
 }
 
-// searchBox renders the always-on search field for the repo list, with a
-// scope-appropriate placeholder when nothing has been typed yet.
-func (a *App) searchBox() string {
-	placeholder := "filter your repos…"
-	if a.scope == scopeGitHub {
-		placeholder = "search GitHub — e.g. torvalds/linux"
-	}
-	return inputBox(searchField(a.query, placeholder), a.width)
-}
-
-// viewList renders the search box, the repo list body, and any background
-// search/refresh status. When the list is empty it substitutes a
-// context-appropriate line for the list's blunt built-in "No items." placeholder.
+// viewList renders the search panel, the repo panel, and (on wide terminals) a
+// details panel for the highlighted repo. Background search/refresh progress
+// lives in the chrome's status line (listStatus), so stale results stay on
+// screen while a new GitHub search is in flight instead of blanking away on
+// every debounced keystroke.
 func (a *App) viewList() string {
-	box := a.searchBox()
-
-	if a.searching {
-		return box + "\n  " + a.spinner.View() + statusStyle.Render(" Searching GitHub…")
+	placeholder := "filter your repos… try lang:go or is:private"
+	switch a.scope {
+	case scopeStarred:
+		placeholder = "filter your starred repos…"
+	case scopeGitHub:
+		placeholder = "search GitHub, e.g. torvalds/linux"
 	}
+	cw := contentWidth(a.width)
+	search := panel("search", searchField(a.query, placeholder), cw, searchBoxLines, true)
+	if a.listHelp {
+		_, lh := a.listPanelSize()
+		return search + "\n" + panel("keys", listHelpBody(), cw, lh, true)
+	}
+
+	body := a.list.View()
 	if len(a.list.Items()) == 0 {
-		var msg string
 		switch {
-		case a.status != "":
-			msg = statusStyle.Render(a.status)
+		case a.searching, a.status != "", a.scope == scopeStarred && a.starredLoading:
+			body = "" // the status line explains the empty panel
+		case a.scope == scopeStarred && a.query == "":
+			body = dimStyle.Render("no starred repositories")
 		case a.scope == scopeGitHub && a.query == "":
-			msg = dimStyle.Render("type a username, repo, or owner/name — e.g. torvalds/linux")
+			body = dimStyle.Render("type a username, repo, or owner/name, e.g. torvalds/linux")
+		case a.query != "" && a.scope != scopeGitHub:
+			body = dimStyle.Render("no repositories match “"+a.query+"”") + "\n\n" +
+				keyStyle.Render("tab") + dimStyle.Render(" to search all of GitHub for it")
 		case a.query != "":
-			msg = dimStyle.Render("no repositories match “" + a.query + "”")
+			body = dimStyle.Render("no repositories match “" + a.query + "”")
 		default:
-			msg = dimStyle.Render("no repositories")
+			body = dimStyle.Render("no repositories")
 		}
-		return box + "\n  " + msg
 	}
 
-	view := box + "\n" + a.list.View()
-	if a.loading {
-		view += "\n" + a.spinner.View() + statusStyle.Render(" Refreshing repositories…")
-	} else if a.status != "" {
-		view += "\n" + statusStyle.Render(a.status)
+	lw, lh := a.listPanelSize()
+	repos := panel(a.listPanelTitle(), body, lw, lh, false)
+	if _, sw := splitWidths(cw); sw > 0 {
+		detail := panel("details", dimStyle.Render("no selection"), sw, lh, false)
+		if it, ok := a.list.SelectedItem().(repoItem); ok {
+			detail = detailColumn(it.repo, a.localPath(it.repo.NameWithOwner), sw, lh)
+		}
+		repos = hsplit(repos, detail)
 	}
-	return view
+	return search + "\n" + repos
 }
 
-// viewBranches renders the branch picker (or its loading state) in chrome.
+// listStatus feeds the chrome's status line: in-flight work first, then any
+// sticky message from a failed refresh or search.
+func (a *App) listStatus() string {
+	switch {
+	case a.searching:
+		return a.spinner.View() + statusStyle.Render(" Searching GitHub…")
+	case a.starredLoading && a.scope == scopeStarred:
+		return a.spinner.View() + statusStyle.Render(" Loading starred repositories…")
+	case a.loading:
+		return a.spinner.View() + statusStyle.Render(" Refreshing repositories…")
+	case a.status != "":
+		return statusStyle.Render(a.status)
+	case a.markNote != "":
+		return a.markNote
+	}
+	return ""
+}
+
+// viewBranches renders the branch picker (or its loading state) as a search
+// panel plus a branches panel, with the repo's details alongside when wide.
 func (a *App) viewBranches() string {
 	context := a.selected.NameWithOwner
 	if a.branchLoading || a.picker == nil {
-		body := "\n  " + a.spinner.View() + statusStyle.Render(" Loading branches…")
-		return compose(a.width, a.height, a.version, context, body, pickerFooter)
+		status := a.spinner.View() + statusStyle.Render(" Loading branches…")
+		return compose(a.width, a.height, a.version, context, "", status, pickerFooter())
 	}
-	context = a.selected.NameWithOwner + dimStyle.Render("  ·  ") + a.picker.context()
-	box := inputBox(searchField(a.picker.query, "filter branches…"), a.width)
-	body := box + "\n" + a.picker.body(a.height-chromeLines-searchBoxLines)
-	return compose(a.width, a.height, a.version, context, body, pickerFooter)
+	cw := contentWidth(a.width)
+	search := panel("search", searchField(a.picker.query, "filter branches…"), cw, searchBoxLines, true)
+	lw, lh := a.listPanelSize()
+	branches := panel(a.picker.context(), a.picker.body(lh-2), lw, lh, false)
+	if _, sw := splitWidths(cw); sw > 0 {
+		branches = hsplit(branches, detailColumn(a.selected, a.localPath(a.selected.NameWithOwner), sw, lh))
+	}
+	return compose(a.width, a.height, a.version, context, search+"\n"+branches, "", pickerFooter())
 }
 
 func (a *App) listFooter() string {
-	scopeHint := [2]string{"tab", "search GitHub"}
-	if a.scope == scopeGitHub {
-		scopeHint = [2]string{"tab", "my repos"}
+	if a.listHelp {
+		return keyHint([2]string{"?", "close"}, [2]string{"^C", "quit"})
 	}
-	return keyHint(
+	scopeHint := map[searchScope][2]string{
+		scopeMine:    {"tab", "starred"},
+		scopeStarred: {"tab", "search GitHub"},
+		scopeGitHub:  {"tab", "my repos"},
+	}[a.scope]
+	sep := dimStyle.Render(hintSep)
+	footer := keyHint([2]string{"enter", "select"})
+	if it, ok := a.list.SelectedItem().(repoItem); ok && deletable(it.repo) {
+		markHint := [2]string{"^x", "mark for deletion"}
+		if _, marked := a.marked[it.repo.NameWithOwner]; marked {
+			markHint = [2]string{"^x", "unmark"}
+		}
+		footer += sep + keyHint(markHint)
+	}
+	if n := len(a.marked); n > 0 {
+		footer += sep + dangerHint("^d", "delete "+plural(n, "repo", "repos"))
+	}
+	last := [2]string{"?", "all keys"}
+	if a.query != "" {
+		last = [2]string{"^C", "quit"}
+	}
+	return footer + sep + keyHint(
+		scopeHint,
+		[2]string{"^s", "sort: " + sortLabel(a.sortBy, a.scope)},
+		[2]string{"esc", "clear"},
 		[2]string{"↑↓", "move"},
 		[2]string{"type", "search"},
-		scopeHint,
-		[2]string{"⏎", "select"},
-		[2]string{"esc", "clear"},
-		[2]string{"^C", "quit"},
+		last,
 	)
+}
+
+func listHelpBody() string {
+	return helpBody("Repository list keys", [][2]string{
+		{"type", "filter the list, or search GitHub"},
+		{"tab", "switch: my repos → starred → GitHub search"},
+		{"ctrl+s", "sort: recent · stars · name"},
+		{"lang:go", "only repos in that language"},
+		{"is:private", "also is:public, is:local (cloned here), is:mine"},
+		{"↑↓ pgup pgdn", "move"},
+		{"enter", "open the action menu"},
+		{"esc", "clear the search · leave GitHub · quit"},
+		{"", ""},
+		{"ctrl+x", "mark or unmark a repo you own for deletion"},
+		{"ctrl+d", "review and delete every marked repo"},
+		{"", ""},
+		{"?", "this overlay (on an empty search)"},
+		{"ctrl+c", "quit"},
+	})
 }

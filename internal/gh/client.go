@@ -4,15 +4,17 @@ package gh
 
 import (
 	"fmt"
+	"net/http"
 
 	"github.com/cli/go-gh/v2/pkg/api"
 )
 
-// Client bundles the REST and GraphQL clients, both authenticated with the
+// Client bundles the REST, GraphQL and raw HTTP clients, both authenticated with the
 // user's existing `gh auth login` credentials.
 type Client struct {
 	rest *api.RESTClient
 	gql  *api.GraphQLClient
+	http *http.Client
 }
 
 // NewClient builds API clients from the active gh authentication. It returns a
@@ -26,7 +28,11 @@ func NewClient() (*Client, error) {
 	if err != nil {
 		return nil, authError(err)
 	}
-	return &Client{rest: rest, gql: gql}, nil
+	httpClient, err := api.DefaultHTTPClient()
+	if err != nil {
+		return nil, authError(err)
+	}
+	return &Client{rest: rest, gql: gql, http: httpClient}, nil
 }
 
 func authError(err error) error {

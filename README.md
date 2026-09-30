@@ -13,6 +13,10 @@ A fast `gh` CLI extension to **fuzzy-search your GitHub repositories**, **browse
 - **Partial / sparse clone** — select individual folders and clone only those with `git clone --filter=blob:none --sparse`, saving bandwidth and disk on large monorepos.
 - **Zero extra dependencies** — the TUI and GitHub API client are built in; no `fzf`, no `jq`.
 - **One precompiled binary** — install as a `gh` extension or a standalone binary; nothing to compile.
+- **Knows what you already have** — repos cloned under your clone directory are badged `local` and offer *open in editor* / *pull* instead of a redundant clone.
+- **Lands where you want it** — set a clone root once (`--dir` / `GH_SELECT_CLONE_DIR`) instead of cloning into whatever directory you happen to be in.
+- **`cd` into the result** — `gh select --print-path` prints the repo's path (cloning it first if needed) so a one-line shell wrapper can jump straight into it.
+- **Your repos, and your org's** — owned, organization, and collaborator repositories all appear in one list.
 - **Quick actions** — clone, copy repo name or URL, and open in browser without leaving the terminal.
 
 ## Installation
@@ -64,33 +68,110 @@ gh select
 
 1. **Find a repo** — type to fuzzy-filter your repositories. The list loads
    instantly from cache and refreshes in the background.
+   - `tab` switches between your repos, your **starred** repos and a search
+     of all of GitHub
+   - `ctrl+s` sorts by recent, stars or name
+   - filter with tokens in the search: `lang:go`, `is:private`, `is:public`,
+     `is:local` (cloned on this machine) and `is:mine`, e.g.
+     `cli lang:go is:mine`
+   - `?` on an empty search shows every key
 2. **Choose an action:**
    - Clone repository (full)
    - **Browse & partial clone** — open the codebase tree
+   - **Releases** — read release notes and download assets: the build for
+     your OS/CPU is preselected, downloads are checksum-verified, and `x`
+     unpacks archives (`--download-dir` / `GH_SELECT_DOWNLOAD_DIR` sets where
+     they land)
    - Copy repository name / URL
    - Open in browser
+   - **Delete repository** (repositories you own)
+
+### Deleting repositories
+
+In the repository list, `ctrl+x` marks a repository and `ctrl+d` opens a
+confirmation screen for everything marked — so a batch of dead repos goes in
+one pass. A single repository can also be deleted from its action menu.
+
+Deletion is permanent and has no undo, so it is gated:
+
+- only repositories **you own** can be marked or deleted
+- the confirmation screen lists exactly what will go, and you must retype a
+  phrase — the repository's name for one, `DELETE <n>` for a batch
+- local working copies are never removed, only reported
+
+GitHub requires an extra scope for this, which `gh auth login` doesn't grant:
+
+```bash
+gh auth refresh -s delete_repo
+```
 
 ### Browse & partial clone
 
 Inside the tree browser you can navigate the entire repository **without
-cloning it**:
+cloning it**. This works for any public repository, not just yours: press `tab`
+in the list to reach your starred repos or search GitHub, pick a repo, then
+**Browse files…**.
 
-- `↑/↓` move · `→` open a folder or preview a file · `←` go up
-- `/` filter the current directory · `space` mark a folder (multi-select)
-- `c` clone — performs a partial clone (`--filter=blob:none --sparse`) that
-  downloads only the folders you selected
+- `↑/↓` move · `→` open a folder or preview a file (markdown is rendered,
+  code is highlighted) · `←` go up
+- `/` filter the current directory · `space` mark files or folders
+- `c` clone: a partial clone (`--filter=blob:none --sparse`) of only what you
+  marked
+- `s` save without git: the marked files and folders, or the highlighted one.
+  A single file lands directly in the download directory, several keep their
+  paths under a folder named after the repo. Existing files are never
+  overwritten.
+- `y` copy the highlighted or previewed file's contents to the clipboard
+- `b` browse another branch or tag; saving, copying and `c` then use it too
+- `o` open the file or folder on github.com · `Y` copy a permalink pinned to
+  the current commit · `r` copy the file's raw download URL
 
 ### Options
 
 ```bash
-gh select -n, --no-cache   # bypass cache, fetch fresh data
-gh select -r, --refresh    # refresh cache and exit
-gh select -v, --version    # show version
-gh select -h, --help       # show help
-gh select doctor           # check tools + authentication
+gh select -n, --no-cache     # bypass cache, fetch fresh data
+gh select -r, --refresh      # refresh cache and exit
+gh select -d, --dir DIR      # clone into DIR instead of the current directory
+gh select -p, --print-path   # print the selected repo's path on stdout
+gh select -v, --version      # show version
+gh select -h, --help         # show help
+gh select doctor             # check tools + authentication
 ```
 
-`GH_SELECT_CACHE_TTL` (seconds) controls cache freshness (default 1800).
+Environment: `GH_SELECT_CACHE_TTL` (seconds) controls cache freshness
+(default 1800); `GH_SELECT_CLONE_DIR` sets the clone root;
+`GH_SELECT_DOWNLOAD_DIR` (or `--download-dir`) sets where release assets and
+saved files land.
+
+### A clone directory
+
+Point gh-select at where you keep code and it stops cloning into the current
+directory:
+
+```bash
+export GH_SELECT_CLONE_DIR=~/dev
+```
+
+It then scans that directory (one level deep, plus `owner/repo` layouts) for
+existing working copies. Repos it finds are badged `local` in the list, and
+their action menu leads with **Open in editor** (`$VISUAL`/`$EDITOR`) and
+**Pull** rather than a clone that would fail.
+
+### Jumping into a repo
+
+A TUI can't change your shell's directory, so `--print-path` writes the
+selected repo's path to stdout — cloning it first if you don't have it yet —
+and everything else goes to stderr:
+
+```fish
+function ghcd
+    set -l dir (gh select --print-path); and cd $dir
+end
+```
+
+```bash
+ghcd() { local dir; dir=$(gh select --print-path) && cd "$dir"; }
+```
 
 ## Performance
 

@@ -14,10 +14,12 @@ type pickerModel struct {
 	all    []string
 	query  string
 	cursor int
+	noun   string          // what the title counts; "branches" by default
+	tags   map[string]bool // items rendered with a dim "tag" marker
 }
 
 func newPicker(items []string) *pickerModel {
-	return &pickerModel{all: items}
+	return &pickerModel{all: items, noun: "branches"}
 }
 
 // rows returns the items matching the current query (fuzzy-ranked), or all
@@ -105,23 +107,22 @@ func (p *pickerModel) selection() string {
 	return rows[p.cursor]
 }
 
-// context is the header's right-hand text: a branch count. The live query lives
-// in the search box rendered below the header.
+// context is the branches panel's title: a branch count, narrowed by the query.
 func (p *pickerModel) context() string {
 	if p.query == "" {
-		return fmt.Sprintf("%d branches", len(p.all))
+		return fmt.Sprintf("%s · %d", p.noun, len(p.all))
 	}
-	return fmt.Sprintf("%d/%d branches", len(p.rows()), len(p.all))
+	return fmt.Sprintf("%s · %d/%d", p.noun, len(p.rows()), len(p.all))
 }
 
 // body renders the visible window of rows for innerH body lines.
 func (p *pickerModel) body(innerH int) string {
 	rows := p.rows()
 	if len(rows) == 0 {
-		return "\n  " + dimStyle.Render("no branches match “"+p.query+"”")
+		return dimStyle.Render("no " + p.noun + " match “" + p.query + "”")
 	}
 
-	visible := innerH - 1
+	visible := innerH
 	if visible < 1 {
 		visible = 1
 	}
@@ -135,25 +136,29 @@ func (p *pickerModel) body(innerH int) string {
 	}
 
 	var b strings.Builder
-	b.WriteString("\n")
 	for i := start; i < end; i++ {
 		pointer := "  "
 		name := rows[i]
 		if i == p.cursor {
-			pointer = selectedStyle.Render(" ▸")
+			pointer = selectedStyle.Render(" ❯")
 			name = selectedStyle.Render(name)
 		} else {
 			name = keyStyle.Render(name)
+		}
+		if p.tags[rows[i]] {
+			name += dimStyle.Render("  tag")
 		}
 		fmt.Fprintf(&b, "%s %s\n", pointer, name)
 	}
 	return b.String()
 }
 
-var pickerFooter = keyHint(
-	[2]string{"↑↓", "move"},
-	[2]string{"type", "search"},
-	[2]string{"⏎", "clone"},
-	[2]string{"esc", "back"},
-	[2]string{"^C", "quit"},
-)
+func pickerFooter() string {
+	return keyHint(
+		[2]string{"↑↓", "move"},
+		[2]string{"type", "search"},
+		[2]string{"enter", "clone"},
+		[2]string{"esc", "back"},
+		[2]string{"^C", "quit"},
+	)
+}

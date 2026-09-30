@@ -11,6 +11,7 @@ import (
 	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/remcostoeten/gh-select/internal/gh"
 )
 
@@ -90,6 +91,8 @@ type treeModel struct {
 	filtering bool   // filter input is active (capturing keystrokes)
 	filter    string // current filter text applied to the directory listing
 
+	helpVisible bool // full-keymap overlay (the footer only shows essentials)
+
 	truncated bool
 	loading   bool
 	status    string
@@ -98,27 +101,39 @@ type treeModel struct {
 	preview     viewport.Model
 	previewing  bool
 	previewPath string
+	previewRaw  []byte // kept so a resize can re-wrap the rendered preview
+
+	saveDir string // where s saves files; "" means the cwd
+
+	ref        string // branch or tag being browsed; "" is the default branch
+	refPicker  *pickerModel
+	refLoading bool
+	commitSHA  map[string]string // ref → commit, for permalinks
 
 	width, height int
 }
 
 func newTreeModel(client *gh.Client, repo gh.Repo, w, h int) *treeModel {
 	t := &treeModel{
-		client:   client,
-		repo:     repo,
-		selected: map[string]*node{},
-		loading:  true,
-		width:    w,
-		height:   h,
+		client:    client,
+		repo:      repo,
+		selected:  map[string]*node{},
+		commitSHA: map[string]string{},
+		loading:   true,
+		width:     w,
+		height:    h,
 	}
-	t.preview = viewport.New(w, h-chromeLines-1) // -1 for previewBody's lead line
+	t.preview = viewport.New(contentWidth(w)-4, h-chromeLines-2) // inside the preview panel
 	return t
 }
 
 func (t *treeModel) setSize(w, h int) {
 	t.width, t.height = w, h
-	t.preview.Width = w
-	t.preview.Height = h - chromeLines - 1
+	t.preview.Width = contentWidth(w) - 4
+	t.preview.Height = h - chromeLines - 2
+	if t.previewing {
+		t.preview.SetContent(renderPreview(t.previewPath, t.previewRaw, t.preview.Width))
+	}
 }
 
 // Tree-screen messages.
@@ -133,16 +148,18 @@ type fileLoadedMsg struct {
 }
 
 func (t *treeModel) fetchTreeCmd() tea.Cmd {
+	ref := t.ref
 	return func() tea.Msg {
 		// Empty ref → HEAD / default branch (resolved server-side).
-		tree, err := t.client.FetchTree(t.repo.NameWithOwner, "")
+		tree, err := t.client.FetchTree(t.repo.NameWithOwner, ref)
 		return treeLoadedMsg{tree: tree, err: err}
 	}
 }
 
 func (t *treeModel) fetchFileCmd(path string) tea.Cmd {
+	ref := t.ref
 	return func() tea.Msg {
-		content, err := t.client.FetchFile(t.repo.NameWithOwner, "", path)
+		content, err := t.client.FetchFile(t.repo.NameWithOwner, ref, path)
 		return fileLoadedMsg{path: path, content: content, err: err}
 	}
 }
@@ -190,7 +207,7 @@ func (t *treeModel) update(msg tea.Msg) (tea.Cmd, treeOutcome) {
 		t.cwd = t.root
 		t.truncated = msg.tree.Truncated
 		if t.truncated {
-			t.status = "⚠ tree truncated by GitHub (very large repo) — some entries hidden"
+			t.status = "⚠ tree truncated by GitHub (very large repo), some entries hidden"
 		}
 		return nil, treeContinue
 
@@ -199,10 +216,27 @@ func (t *treeModel) update(msg tea.Msg) (tea.Cmd, treeOutcome) {
 			t.status = "preview failed: " + msg.err.Error()
 			return nil, treeContinue
 		}
+		t.status = "" // clear the "loading …" message now the preview is up
 		t.previewing = true
 		t.previewPath = msg.path
-		t.preview.SetContent(renderPreview(msg.path, msg.content))
+		t.previewRaw = msg.content
+		t.preview.SetContent(renderPreview(msg.path, msg.content, t.preview.Width))
 		t.preview.GotoTop()
+		return nil, treeContinue
+
+	case treeStatusMsg:
+		t.status = msg.text
+		return nil, treeContinue
+
+	case treeLinkMsg:
+		t.status = msg.status
+		if msg.sha != "" {
+			t.commitSHA[msg.ref] = msg.sha
+		}
+		return nil, treeContinue
+
+	case refsLoadedMsg:
+		t.refsLoaded(msg)
 		return nil, treeContinue
 
 	case tea.KeyMsg:
@@ -216,11 +250,44 @@ func (t *treeModel) handleKey(key tea.KeyMsg) (tea.Cmd, treeOutcome) {
 		switch key.String() {
 		case "esc", "q", "left", "h", "backspace":
 			t.previewing = false
+			t.status = ""
 			return nil, treeContinue
+		case "y":
+			return t.copyFileCmd(t.previewPath, t.previewRaw), treeContinue
+		case "s":
+			return t.startSave([]string{t.previewPath}, t.previewRaw), treeContinue
+		case "o":
+			return t.openWebCmd(), treeContinue
+		case "Y":
+			return t.copyPermalinkCmd(), treeContinue
+		case "r":
+			return t.copyRawCmd(), treeContinue
 		}
 		var cmd tea.Cmd
 		t.preview, cmd = t.preview.Update(key)
 		return cmd, treeContinue
+	}
+
+	if t.refPicker != nil {
+		switch t.refPicker.handleKey(key.String(), key.Runes, key.Type == tea.KeyRunes) {
+		case pickerQuit:
+			return nil, treeQuit
+		case pickerBack:
+			t.refPicker = nil
+		case pickerChosen:
+			return t.switchRef(t.refPicker.selection()), treeContinue
+		}
+		return nil, treeContinue
+	}
+
+	if t.helpVisible {
+		switch key.String() {
+		case "ctrl+c":
+			return nil, treeQuit
+		case "?", "esc", "q", "enter":
+			t.helpVisible = false
+		}
+		return nil, treeContinue
 	}
 
 	// While the filter input is active, capture text instead of navigating.
@@ -259,6 +326,8 @@ func (t *treeModel) handleKey(key tea.KeyMsg) (tea.Cmd, treeOutcome) {
 	case "/":
 		t.filtering = true
 		t.cursor = 0
+	case "?":
+		t.helpVisible = true
 	case "up", "k":
 		if t.cursor > 0 {
 			t.cursor--
@@ -275,6 +344,25 @@ func (t *treeModel) handleKey(key tea.KeyMsg) (tea.Cmd, treeOutcome) {
 		t.goUp()
 	case "c":
 		return nil, treeConfirm
+	case "s":
+		return t.startSave(t.saveTargets(), nil), treeContinue
+	case "y":
+		if n := t.current(); n != nil && !n.isDir {
+			t.status = "copying " + n.path + "…"
+			return t.copyFileCmd(n.path, nil), treeContinue
+		}
+		t.status = "y copies a file's contents, highlight a file first"
+	case "b":
+		if !t.refLoading {
+			t.refLoading = true
+			return t.fetchRefsCmd(), treeContinue
+		}
+	case "o":
+		return t.openWebCmd(), treeContinue
+	case "Y":
+		return t.copyPermalinkCmd(), treeContinue
+	case "r":
+		return t.copyRawCmd(), treeContinue
 	}
 	return nil, treeContinue
 }
@@ -299,6 +387,7 @@ func (t *treeModel) toggleSelection() {
 	} else {
 		t.selected[n.path] = n
 	}
+	t.status = "" // the status line now shows the selection summary instead
 }
 
 // activate drills into a folder or previews a file.
@@ -356,6 +445,9 @@ func (t *treeModel) selectedFiles() []string {
 
 func (t *treeModel) breadcrumb() string {
 	crumb := t.repo.NameWithOwner
+	if t.ref != "" {
+		crumb += "@" + t.ref
+	}
 	// stack holds ancestor directories (the root included); render the path of
 	// entered directories, skipping the unnamed root.
 	for _, n := range t.stack {
@@ -370,60 +462,141 @@ func (t *treeModel) breadcrumb() string {
 	return crumb
 }
 
-var treeBrowseFooter = keyHint(
-	[2]string{"↑↓", "move"},
-	[2]string{"→", "open"},
-	[2]string{"←", "up"},
-	[2]string{"space", "select"},
-	[2]string{"/", "filter"},
-	[2]string{"c", "clone"},
-	[2]string{"esc", "back"},
-)
+// The footer shows only the essentials; ? opens the full keymap overlay.
+func treeBrowseFooter() string {
+	return keyHint(
+		[2]string{"↑↓", "move"},
+		[2]string{"→", "open"},
+		[2]string{"space", "select"},
+		[2]string{"c", "clone"},
+		[2]string{"s", "save"},
+		[2]string{"y", "copy"},
+		[2]string{"b", "branch/tag"},
+		[2]string{"o", "open on GitHub"},
+		[2]string{"?", "help"},
+	)
+}
 
-var treePreviewFooter = keyHint(
-	[2]string{"↑↓", "scroll"},
-	[2]string{"esc", "close"},
-)
+func treePreviewFooter() string {
+	return keyHint(
+		[2]string{"↑↓", "scroll"},
+		[2]string{"y", "copy"},
+		[2]string{"s", "save"},
+		[2]string{"o", "open on GitHub"},
+		[2]string{"Y", "permalink"},
+		[2]string{"r", "raw URL"},
+		[2]string{"esc", "close"},
+	)
+}
 
-// chromeParts returns the header context, body, and footer key hints for the
-// tree screen, sized to fit innerH body rows. The App wraps these in chrome.
-func (t *treeModel) chromeParts(spinnerFrame string, innerH int) (context, body, keys string) {
+func treeHelpFooter() string {
+	return keyHint(
+		[2]string{"?", "close"},
+		[2]string{"^C", "quit"},
+	)
+}
+
+// treeHelpBody is the full keymap overlay opened with ?.
+func treeHelpBody() string {
+	return helpBody("Tree browser keys", [][2]string{
+		{"↑/k  ↓/j", "move"},
+		{"enter → l", "open folder · preview file"},
+		{"← h backspace", "parent folder"},
+		{"space / tab", "select or unselect a file or folder"},
+		{"c", "partial clone of the selection (git)"},
+		{"s", "save the selection, or the highlighted file or folder, without git"},
+		{"y", "copy the highlighted file's contents to the clipboard"},
+		{"b", "browse another branch or tag"},
+		{"o", "open the file or folder on github.com"},
+		{"Y", "copy a permalink pinned to the current commit"},
+		{"r", "copy the file's raw download URL"},
+		{"/", "filter the current folder"},
+		{"esc", "clear filter · back"},
+		{"q", "back to actions"},
+		{"ctrl+c", "quit"},
+	})
+}
+
+// statusLine feeds the chrome's status row: a transient message when there is
+// one, otherwise (only on narrow terminals, where the selected panel is
+// hidden) a summary of everything selected so far.
+func (t *treeModel) statusLine() string {
+	if t.status != "" {
+		return statusStyle.Render(t.status)
+	}
+	if sideWidth(contentWidth(t.width)) > 0 {
+		return "" // the selected panel already shows the marks
+	}
+	if n := len(t.selected); n > 0 {
+		paths := append(t.selectedFolders(), t.selectedFiles()...)
+		return markedStyle.Render(fmt.Sprintf("%d selected", n)) +
+			dimStyle.Render(" · "+strings.Join(paths, ", "))
+	}
+	return ""
+}
+
+// selectedPanelBody lists every marked path, or a hint when nothing is marked.
+func (t *treeModel) selectedPanelBody() string {
+	if len(t.selected) == 0 {
+		return dimStyle.Render("space marks a file or folder\nfor the partial clone")
+	}
+	var b strings.Builder
+	for _, p := range append(t.selectedFolders(), t.selectedFiles()...) {
+		b.WriteString(markedStyle.Render("x ") + p + "\n")
+	}
+	return b.String()
+}
+
+// chromeParts returns the header context, body, status line, and footer key
+// hints for the tree screen, sized to fit innerH body rows. The App wraps
+// these in chrome.
+func (t *treeModel) chromeParts(spinnerFrame string, innerH int) (context, body, status, keys string) {
+	cw := contentWidth(t.width)
 	if t.err != nil {
-		return t.repo.NameWithOwner, errStyle.Render("Error: " + t.err.Error()), treeBrowseFooter
+		return t.repo.NameWithOwner,
+			panel("files", errStyle.Render("Error: "+t.err.Error()), cw, innerH, false),
+			"", treeBrowseFooter()
 	}
 	if t.loading {
 		return t.repo.NameWithOwner,
-			"\n  " + spinnerFrame + statusStyle.Render("Loading file tree…"),
-			treeBrowseFooter
+			panel("files", "", cw, innerH, false),
+			spinnerFrame + statusStyle.Render("Loading file tree…"),
+			treeBrowseFooter()
 	}
 	if t.previewing {
-		return t.previewPath, t.previewBody(), treePreviewFooter
+		status := dimStyle.Render(fmt.Sprintf("%3.0f%%", t.preview.ScrollPercent()*100))
+		if t.status != "" {
+			status = statusStyle.Render(t.status)
+		}
+		return t.previewPath,
+			panel("preview", t.preview.View(), cw, innerH, true),
+			status, treePreviewFooter()
+	}
+	if t.refPicker != nil {
+		return t.breadcrumb(),
+			panel(t.refPicker.context(), t.refPicker.body(innerH-2), cw, innerH, true),
+			"", refPickerFooter()
+	}
+	if t.helpVisible {
+		return t.breadcrumb(),
+			panel("keys", treeHelpBody(), cw, innerH, true),
+			"", treeHelpFooter()
 	}
 
-	var top strings.Builder
-	if n := len(t.selected); n > 0 {
-		top.WriteString(markedStyle.Render(fmt.Sprintf("  %d selected", n)))
-		top.WriteString("\n")
-	}
+	var top string
+	overhead := 0
 	if t.filtering || t.filter != "" {
 		caret := ""
 		if t.filtering {
 			caret = "_"
 		}
-		top.WriteString(statusStyle.Render("  filter: "+t.filter+caret) +
-			dimStyle.Render("   (esc to clear)"))
-		top.WriteString("\n")
-	}
-	top.WriteString("\n")
-
-	var status string
-	if t.status != "" {
-		status = statusStyle.Render("  "+t.status) + "\n"
+		top = statusStyle.Render("filter: "+t.filter+caret) +
+			dimStyle.Render("   (esc to clear)") + "\n"
+		overhead = 1
 	}
 
-	// Reserve rows for the header/status lines so the listing fits innerH.
-	overhead := strings.Count(top.String(), "\n") + strings.Count(status, "\n")
-	visible := innerH - overhead
+	// The listing scrolls within the panel's inner rows.
+	visible := innerH - 2 - overhead
 	if visible < 1 {
 		visible = 1
 	}
@@ -439,25 +612,31 @@ func (t *treeModel) chromeParts(spinnerFrame string, innerH int) (context, body,
 	}
 
 	var b strings.Builder
-	b.WriteString(top.String())
+	b.WriteString(top)
 	for i := start; i < end; i++ {
 		b.WriteString(t.renderRow(i, rows[i]))
 	}
-	b.WriteString(status)
-	return t.breadcrumb(), b.String(), treeBrowseFooter
+
+	mw, sw := splitWidths(cw)
+	files := panel("files", b.String(), mw, innerH, true)
+	if sw > 0 {
+		files = hsplit(files, panel(fmt.Sprintf("selected · %d", len(t.selected)),
+			t.selectedPanelBody(), sw, innerH, false))
+	}
+	return t.breadcrumb(), files, t.statusLine(), treeBrowseFooter()
 }
 
 func (t *treeModel) renderRow(i int, n *node) string {
 	pointer := "  "
 	if i == t.cursor {
-		pointer = selectedStyle.Render(" ▸")
+		pointer = selectedStyle.Render(" ❯")
 	}
 
 	if n.name == ".." {
 		return fmt.Sprintf("%s   %s\n", pointer, dimStyle.Render("../"))
 	}
 
-	box := "[ ]"
+	box := dimStyle.Render("[ ]")
 	if t.selected[n.path] != nil {
 		box = markedStyle.Render("[x]")
 	}
@@ -481,17 +660,14 @@ func (t *treeModel) renderRow(i int, n *node) string {
 	return fmt.Sprintf("%s %s %s\n", pointer, box, name)
 }
 
-func (t *treeModel) previewBody() string {
-	return "\n" + t.preview.View()
-}
-
 // renderPreview prepares file bytes for display: it guards against binary
-// blobs, caps very large files, and applies syntax highlighting chosen from the
-// file path (falling back to content analysis).
-func renderPreview(path string, content []byte) string {
+// blobs, caps very large files, renders markdown as prose, and otherwise
+// applies syntax highlighting chosen from the file path (falling back to
+// content analysis). width is the wrap width for markdown.
+func renderPreview(path string, content []byte, width int) string {
 	for _, c := range content {
 		if c == 0 {
-			return dimStyle.Render("(binary file — preview unavailable)")
+			return dimStyle.Render("(binary file, no preview)")
 		}
 	}
 	const maxBytes = 100 * 1024
@@ -501,7 +677,12 @@ func renderPreview(path string, content []byte) string {
 		truncated = true
 	}
 
-	out := highlight(path, string(content))
+	var out string
+	if isMarkdown(path) {
+		out = renderMarkdown(string(content), width)
+	} else {
+		out = highlight(path, string(content))
+	}
 	if truncated {
 		out += "\n" + dimStyle.Render("… (truncated)")
 	}
@@ -524,7 +705,11 @@ func highlight(path, source string) string {
 	if formatter == nil {
 		formatter = formatters.Fallback
 	}
-	style := styles.Get("catppuccin-mocha")
+	styleName := "catppuccin-mocha"
+	if !lipgloss.HasDarkBackground() {
+		styleName = "catppuccin-latte"
+	}
+	style := styles.Get(styleName)
 	if style == nil {
 		style = styles.Fallback
 	}
@@ -538,4 +723,14 @@ func highlight(path, source string) string {
 		return source
 	}
 	return buf.String()
+}
+
+func refPickerFooter() string {
+	return keyHint(
+		[2]string{"↑↓", "move"},
+		[2]string{"type", "search"},
+		[2]string{"enter", "browse"},
+		[2]string{"esc", "back"},
+		[2]string{"^C", "quit"},
+	)
 }
