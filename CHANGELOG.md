@@ -14,7 +14,7 @@ All notable changes to gh-select are documented here.
   top, an owner's repos are matched by partial name, and a misspelled owner
   falls back to look-alike accounts. Pasting a URL in My repos or Starred
   switches to GitHub search.
-- **API rate limits**: `gh select limits` (or `--limits`) and the `?`
+- **API rate limits**: `gh select limits` (or `-l`, `--limits`) and the `?`
   overlay show usage for the search, core, graphql and code search budgets,
   a bar marking how far each window has run, the reset countdown and, when
   the current pace would empty a bucket before it resets, how soon.
@@ -36,6 +36,14 @@ All notable changes to gh-select are documented here.
   `~/.config/gh-select/theme`.
 
 ### Changed
+- **Command line**: every command (`doctor`, `limits`, `refresh`, `version`,
+  `help`) works as a word, a short flag and a long flag, and takes `-h` or
+  `--help` for its own help page. The help is grouped into commands,
+  options, environment and examples, and is colored on a terminal unless
+  `NO_COLOR` is set. Unknown commands and options exit with status 2 and
+  suggest the closest match instead of opening the picker.
+- **`--print-path` exits 130** when you quit without picking a repo, so
+  `dir=$(gh select -p) && cd "$dir"` no longer runs `cd ""`.
 - **Header and footer**: the header shows the version, author, source, last
   update and build commit, dropping details from the end on narrow
   terminals, and a hairline separates the screen from the key hints.
@@ -68,6 +76,8 @@ All notable changes to gh-select are documented here.
   first `ctrl+c` clears it and the second quits.
 
 ### Fixed
+- **Spaces in the repo list search**: `space` now types a space, so
+  queries like `lang:go alpha` combine a filter with a name.
 - **Backspace goes back** from the action menu to the repo list, and from
   the branch picker once its filter is empty, like it already did from the
   README, tree and releases screens.

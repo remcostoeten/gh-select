@@ -2,7 +2,12 @@
 
 A fast `gh` CLI extension to **fuzzy-search your GitHub repositories**, **browse any repo's file tree without cloning**, and **partial (sparse) clone only the folders you want**. Built in Go with a self-contained terminal UI — no `fzf` or `jq` required.
 
-![gh-select Demo](./assets/gh-select-demo.gif)
+<p align="center">
+  <img src="assets/gh-select-demo.gif" width="100%" alt="Filtering your own repos with is:public, tabbing to a GitHub search for charmbracelet bubbletea, browsing its file tree, marking the examples and tutorials folders, opening a folder, previewing the rendered README, then cycling color themes with ctrl+t" />
+</p>
+<p align="center">
+  <sub>Recorded with vhs in bash, catppuccin theme. Re-record with <code>scripts/dev.sh demo</code>.</sub>
+</p>
 
 `gh select` turns finding, previewing, and cloning GitHub repos into a single keyboard-driven flow in your terminal. Type to filter your repositories from cache (instant), open a repo's codebase tree to preview files via the GitHub API, mark the folders you actually need, and clone just those with a sparse `git` checkout.
 
@@ -137,17 +142,29 @@ in the list to reach your starred repos or search GitHub, pick a repo, then
 - `o` open the file or folder on github.com · `Y` copy a permalink pinned to
   the current commit · `r` copy the file's raw download URL
 
-### Options
+### Commands and options
+
+Every command also takes its short and long flag form, and `-h` or `--help`
+for its own help, so `gh select limits`, `gh select -l` and
+`gh select --limits` do the same thing.
+
+```bash
+gh select doctor             # check git, gh and your GitHub login (--doctor)
+gh select limits             # show API rate limit usage (-l, --limits)
+gh select refresh            # refetch the repo cache and exit (-r, --refresh)
+gh select version            # print the version (-v, --version)
+gh select help [command]     # overview, or one command's help (-h, --help)
+```
 
 ```bash
 gh select -n, --no-cache     # bypass cache, fetch fresh data
-gh select -r, --refresh      # refresh cache and exit
 gh select -d, --dir DIR      # clone into DIR instead of the current directory
 gh select -p, --print-path   # print the selected repo's path on stdout
-gh select -v, --version      # show version
-gh select -h, --help         # show help
-gh select doctor             # check tools + authentication
 ```
+
+Run `gh select help` for the full list, including `--theme`, `--border`,
+`--icons`, `--transparent` and `--download-dir`. Typos get a suggestion and
+exit with status 2.
 
 Environment: `GH_SELECT_CACHE_TTL` (seconds) controls cache freshness
 (default 1800); `GH_SELECT_CLONE_DIR` sets the clone root;
@@ -208,7 +225,8 @@ their action menu leads with **Open in editor** (`$VISUAL`/`$EDITOR`) and
 
 A TUI can't change your shell's directory, so `--print-path` writes the
 selected repo's path to stdout — cloning it first if you don't have it yet —
-and everything else goes to stderr:
+and everything else goes to stderr. Quitting without picking a repo exits with
+status 130, so the wrappers below leave your directory alone:
 
 ```fish
 function ghcd
