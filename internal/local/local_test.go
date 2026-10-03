@@ -64,3 +64,43 @@ func TestDestinationAndExists(t *testing.T) {
 		t.Error("Exists missed an existing working copy")
 	}
 }
+
+func TestDiscoverSkipsHeavyDirsAndPrefersEarlierRoots(t *testing.T) {
+	first, home := t.TempDir(), t.TempDir()
+	writeClone(t, filepath.Join(first, "alpha"), "https://github.com/me/alpha.git")
+	writeClone(t, filepath.Join(home, "code", "alpha"), "https://github.com/me/alpha.git")
+	writeClone(t, filepath.Join(home, "code", "web", "node_modules", "dep"), "https://github.com/x/dep.git")
+	writeClone(t, filepath.Join(home, "code", "beta", "inner"), "https://github.com/me/inner.git")
+	writeClone(t, filepath.Join(home, ".cache", "tool"), "https://github.com/x/tool.git")
+	writeClone(t, filepath.Join(home, ".config", "dotfiles"), "https://github.com/me/dotfiles.git")
+
+	idx := Discover([]Root{{Dir: first, Depth: 2}, {Dir: home, Depth: 5}})
+	if got := idx["me/alpha"]; got != filepath.Join(first, "alpha") {
+		t.Errorf("alpha = %q, want the earlier root's copy", got)
+	}
+	if got := idx["me/dotfiles"]; got == "" {
+		t.Error("dotfiles under .config not found")
+	}
+	if got := idx["me/inner"]; got == "" {
+		t.Error("inner not found")
+	}
+	for _, name := range []string{"x/dep", "x/tool"} {
+		if got, ok := idx[name]; ok {
+			t.Errorf("%s found at %q, want skipped", name, got)
+		}
+	}
+}
+
+func TestLoadDropsVanishedClones(t *testing.T) {
+	dir := t.TempDir()
+	kept := filepath.Join(dir, "kept")
+	writeClone(t, kept, "https://github.com/me/kept.git")
+	path := filepath.Join(dir, "locals.json")
+	if err := Save(path, map[string]string{"me/kept": kept, "me/gone": filepath.Join(dir, "gone")}); err != nil {
+		t.Fatal(err)
+	}
+	idx, ok := Load(path)
+	if !ok || len(idx) != 1 || idx["me/kept"] != kept {
+		t.Errorf("Load = %v, %v", idx, ok)
+	}
+}
