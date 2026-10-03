@@ -133,6 +133,7 @@ type App struct {
 	markNote string
 
 	listHelp bool
+	rate     rateLimits
 
 	// retype-to-confirm delete screen; confirmReturn is the screen esc goes back to
 	confirm       *confirmModel
@@ -388,6 +389,9 @@ func (a *App) fetchCmd() tea.Cmd {
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case rateLimitsMsg, rateTickMsg:
+		return a, a.updateRate(msg)
+
 	case spinner.TickMsg:
 		if !a.anyLoading() {
 			return a, nil // let the spinner stop once nothing is loading
@@ -552,8 +556,7 @@ func (a *App) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Quit
 	case "?":
 		if a.query == "" {
-			a.listHelp = true
-			return a, nil
+			return a.openListHelp()
 		}
 	case "tab":
 		return a.toggleScope()
@@ -779,7 +782,7 @@ func (a *App) viewList() string {
 	search := panel("search", searchField(a.query, placeholder), cw, searchBoxLines, true)
 	if a.listHelp {
 		_, lh := a.listPanelSize()
-		return search + "\n" + panel("keys", listHelpBody(), cw, lh, true)
+		return search + "\n" + panel("help", listHelpBody()+"\n"+a.rateLimitsBody(), cw, lh, true)
 	}
 
 	body := a.list.View()
@@ -898,7 +901,7 @@ func listHelpBody() string {
 		{"ctrl+x", "mark or unmark a repo you own for deletion"},
 		{"ctrl+d", "review and delete every marked repo"},
 		{"", ""},
-		{"?", "this overlay (on an empty search)"},
+		{"?", "this overlay with API rate limits (on an empty search)"},
 		{"ctrl+c", "quit"},
 	})
 }

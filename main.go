@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/remcostoeten/gh-select/internal/cache"
@@ -65,6 +66,7 @@ func main() {
 		noCache     = flag.Bool("no-cache", false, "bypass cache and fetch fresh data")
 		refreshOnly = flag.Bool("refresh", false, "refresh the cache and exit")
 		showVer     = flag.Bool("version", false, "show version information")
+		showLimits  = flag.Bool("limits", false, "show GitHub API rate limit usage and exit")
 		theme       = flag.String("theme", "", "color theme (also GH_SELECT_THEME)")
 		border      = flag.String("border", "", "panel border style (also GH_SELECT_BORDER)")
 		transparent = flag.Bool("transparent", false, "don't paint the app background (also GH_SELECT_TRANSPARENT)")
@@ -82,6 +84,13 @@ func main() {
 
 	if *showVer {
 		fmt.Printf("gh-select %s\n", resolveVersion())
+		return
+	}
+	if *showLimits || flag.Arg(0) == "limits" {
+		if err := limits(); err != nil {
+			fmt.Fprintln(os.Stderr, errLine(err.Error()))
+			os.Exit(1)
+		}
 		return
 	}
 
@@ -418,6 +427,27 @@ func doctor() error {
 	return nil
 }
 
+// limits prints the viewer's API budgets with how much of each window has
+// passed, so a fast burn shows before the bucket runs dry.
+func limits() error {
+	client, err := gh.NewClient()
+	if err != nil {
+		return err
+	}
+	buckets, err := client.RateLimits()
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	fmt.Printf("GitHub API rate limits (shared by every tool using your gh login)\n\n")
+	for _, b := range buckets {
+		fmt.Printf("  %-12s %s  %5d/%-5d  %-3s window  %s\n",
+			b.Name, b.UsageBar(20, now), b.Used, b.Limit, gh.ShortDuration(b.Window), b.Pace(now))
+	}
+	fmt.Println("\n  █ used  │ how far the current window has run")
+	return nil
+}
+
 func orMissing(path, missingHint string) string {
 	if path == "" {
 		return "not found, " + missingHint
@@ -431,6 +461,7 @@ func usage() {
 Usage:
   gh select [options]
   gh select doctor          check tools and authentication
+  gh select limits          show GitHub API rate limit usage (or --limits)
 
 Options:
   -n, --no-cache   bypass cache, fetch fresh data
