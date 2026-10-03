@@ -6,10 +6,8 @@
   <a href="https://github.com/remcostoeten/gh-select/releases/latest"><img src="https://shieldcn.dev/github/remcostoeten/gh-select/release.svg?font=jetbrains-mono" alt="release" /></a>
   <a href="https://github.com/remcostoeten/gh-select/actions/workflows/ci.yml"><img src="https://shieldcn.dev/github/remcostoeten/gh-select/ci.svg?font=jetbrains-mono" alt="CI" /></a>
   <a href="LICENSE"><img src="https://shieldcn.dev/github/remcostoeten/gh-select/license.svg?font=jetbrains-mono" alt="license" /></a>
-  <img src="https://shieldcn.dev/badge/core-Go-black.svg?font=jetbrains-mono&logo=go" alt="core: Go" />
   <img src="https://shieldcn.dev/badge/runs%20as-gh%20extension-black.svg?font=jetbrains-mono&logo=github" alt="runs as: gh extension" />
-  <img src="https://shieldcn.dev/badge/UI-Bubble%20Tea-black.svg?font=jetbrains-mono" alt="UI: Bubble Tea" />
-  <img src="https://shieldcn.dev/badge/clone-sparse-black.svg?font=jetbrains-mono" alt="clone: sparse" />
+  <img src="https://shieldcn.dev/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows%20%7C%20FreeBSD-black.svg?font=jetbrains-mono" alt="platforms: macOS, Linux, Windows, FreeBSD" />
 </p>
 
 <p align="center">
