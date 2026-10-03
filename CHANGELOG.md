@@ -36,9 +36,10 @@ All notable changes to gh-select are documented here.
   `~/.config/gh-select/theme`.
 
 ### Changed
-- **Footer**: every screen ends with a dim line showing the version, build
-  commit and its date on the left, and the author and source on the right.
-  The version moved there from the header.
+- **Footer**: a hairline separates the screen from the key hints, and every
+  screen ends with a dim line showing the version, build commit and its date
+  on the left, and the author and source on the right. The version moved
+  there from the header.
 - **Frameless layout**: panels drop their boxes for a title row, the search
   field sits on a hairline rule, side panels are split by a single line and
   the highlighted row gets a full-width tinted bar. `--border rounded` brings

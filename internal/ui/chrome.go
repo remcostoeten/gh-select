@@ -8,13 +8,13 @@ import (
 )
 
 // Slim persistent chrome: a one-line header (app name + screen context), a
-// blank breathing row, a one-line status row, and a two-line footer (key hints
-// over a dim build and source line).
+// blank breathing row, a one-line status row, a hairline, and a two-line footer
+// (key hints over a dim build and source line).
 // The body is built from titled panels, frameless by default or boxed via
 // SetBorder, with the focused panel's title highlighted. The whole layout is
 // centered and capped at maxContentWidth so it doesn't stretch thin across
 // very wide terminals.
-const chromeLines = 5 // header (1) + blank (1) + status line (1) + footer (2)
+const chromeLines = 6 // header (1) + blank (1) + status line (1) + rule (1) + footer (2)
 
 // maxContentWidth caps how wide the layout grows; anything wider is margin.
 const maxContentWidth = 118
@@ -253,9 +253,9 @@ func justify(left, right string, w int) string {
 }
 
 // compose stacks the slim header, a breathing row, a body padded to exactly
-// innerHeight rows, the status line, the key hints and the meta line, so the
-// footer is always pinned to the bottom of the screen with status visible
-// above it, and the whole column is centered within the terminal.
+// innerHeight rows, the status line, a hairline, the key hints and the meta
+// line, so the footer is always pinned to the bottom of the screen with status
+// visible above it, and the whole column is centered within the terminal.
 func compose(width, height int, meta footerMeta, context, body, status, keys string) string {
 	cw := contentWidth(width)
 	innerH := height - chromeLines
@@ -270,6 +270,7 @@ func compose(width, height int, meta footerMeta, context, body, status, keys str
 	out := edge + truncate(headerLine(context, cw-4), cw-4) + "\n\n" +
 		fitHeight(body, innerH) + "\n" +
 		statusLine + "\n" +
+		" " + dimStyle.Render(strings.Repeat("─", max(cw-2, 0))) + "\n" +
 		edge + fitHints(keys, cw-4) + "\n" +
 		edge + meta.line(cw-4)
 	return indent(out, contentPad(width))
