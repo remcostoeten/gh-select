@@ -2,6 +2,31 @@
 
 All notable changes to gh-select are documented here.
 
+## [Unreleased]
+
+### Added
+- **Smarter GitHub search**: accepts `owner/repo`, `owner repo`,
+  `owner-repo`, a bare owner or name, and pasted URLs with any scheme,
+  `www.` or TLD (`github.nl`), SSH remotes, `.git` suffixes and full
+  `git clone` commands. Exact repos are looked up directly and pinned on
+  top, an owner's repos are matched by partial name, and a misspelled owner
+  falls back to look-alike accounts. Pasting a URL in My repos or Starred
+  switches to GitHub search.
+- **API rate limits**: `gh select limits` (or `--limits`) and the `?`
+  overlay show usage for the search, core, graphql and code search budgets,
+  a bar marking how far each window has run, the reset countdown and, when
+  the current pace would empty a bucket before it resets, how soon.
+- **More themes**: `everforest`, `kanagawa`, `rose-pine` and `solarized`.
+- **Custom themes** from `~/.config/gh-select/themes/NAME.json`, inheriting
+  unset colors from the theme named in `extends`.
+- **`ctrl+t`** in the repo list cycles themes and remembers the choice in
+  `~/.config/gh-select/theme`.
+
+### Changed
+- **`ctrl+c` clears before it quits**: with text in a search or filter box
+  (repo list, pickers, tree browser, releases, delete confirmation), the
+  first `ctrl+c` clears it and the second quits.
+
 ## [2.4.0] - 2026-09-30
 
 ### Added

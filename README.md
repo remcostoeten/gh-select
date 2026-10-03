@@ -70,11 +70,18 @@ gh select
    instantly from cache and refreshes in the background.
    - `tab` switches between your repos, your **starred** repos and a search
      of all of GitHub
+   - GitHub search takes a name, an owner, `owner/repo`, `owner repo`,
+     `owner-repo` or a pasted URL, SSH remote or `git clone` command. A
+     partial owner like `heygen liveav` still finds `heygen-com/liveavatar-*`.
+     Pasting a URL into any list jumps to GitHub search
    - `ctrl+s` sorts by recent, stars or name
+   - `ctrl+t` cycles color themes and remembers the last one
    - filter with tokens in the search: `lang:go`, `is:private`, `is:public`,
      `is:local` (cloned on this machine) and `is:mine`, e.g.
      `cli lang:go is:mine`
-   - `?` on an empty search shows every key
+   - `?` on an empty search shows every key and your live GitHub API rate
+     limits: usage per bucket, how far each window has run, and when the
+     current pace would run it dry. `gh select limits` prints the same
 2. **Choose an action:**
    - Clone repository (full)
    - **Browse & partial clone** — open the codebase tree
@@ -142,6 +149,35 @@ Environment: `GH_SELECT_CACHE_TTL` (seconds) controls cache freshness
 (default 1800); `GH_SELECT_CLONE_DIR` sets the clone root;
 `GH_SELECT_DOWNLOAD_DIR` (or `--download-dir`) sets where release assets and
 saved files land.
+
+### Themes
+
+Built-in themes: `tokyonight` (default), `catppuccin`, `dracula`,
+`everforest`, `gruvbox`, `kanagawa`, `nord`, `rose-pine` and `solarized`.
+Each has a light and a dark variant, picked from the terminal background.
+Choose one with `--theme NAME` or `GH_SELECT_THEME`, or press `ctrl+t` in the
+repo list. The theme picked with `ctrl+t` is saved to
+`~/.config/gh-select/theme` and used when neither the flag nor the variable
+is set. `--border` picks `rounded`, `sharp`, `double`, `thick` or `hidden`,
+and `--transparent` keeps the terminal's own background.
+
+A custom theme is a JSON file in `~/.config/gh-select/themes/`, named after
+the theme. Colors left out come from the theme in `extends`:
+
+```json
+{
+  "extends": "nord",
+  "dark": { "hl": "#c792ea", "pink": "#ff5370" },
+  "light": { "hl": "#7c4dff" }
+}
+```
+
+The colors are `bg`, `fg`, `dim`, `hl`, `cyan`, `blue`, `green`, `pink`,
+`yellow` and `red`, each as `#rrggbb`.
+
+`extends` can name another custom theme. A file that fails to load is
+skipped and named in the status line, and so is a saved theme that no longer
+exists.
 
 ### A clone directory
 
