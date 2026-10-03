@@ -70,6 +70,7 @@ func main() {
 		showLimits  = flag.Bool("limits", false, "show GitHub API rate limit usage and exit")
 		theme       = flag.String("theme", "", "color theme (also GH_SELECT_THEME)")
 		border      = flag.String("border", "", "panel border style (also GH_SELECT_BORDER)")
+		icons       = flag.String("icons", "", "icon set: nerd or none (also GH_SELECT_ICONS)")
 		transparent = flag.Bool("transparent", false, "don't paint the app background (also GH_SELECT_TRANSPARENT)")
 		cloneDir    = flag.String("dir", "", "directory to clone into (also GH_SELECT_CLONE_DIR)")
 		printPath   = flag.Bool("print-path", false, "print the selected repo's local path, cloning it if needed")
@@ -100,6 +101,7 @@ func main() {
 		refreshOnly: *refreshOnly,
 		theme:       *theme,
 		border:      *border,
+		icons:       *icons,
 		transparent: *transparent,
 		cloneDir:    *cloneDir,
 		printPath:   *printPath,
@@ -118,6 +120,7 @@ type options struct {
 	refreshOnly bool
 	theme       string
 	border      string
+	icons       string
 	transparent bool
 	cloneDir    string
 	printPath   bool
@@ -159,6 +162,13 @@ func run(opts options) error {
 		_ = ui.SetTheme("")
 	}
 	if err := ui.SetBorder(border); err != nil {
+		return err
+	}
+	icons := opts.icons
+	if icons == "" {
+		icons = cfg.Icons
+	}
+	if err := ui.SetIcons(icons); err != nil {
 		return err
 	}
 	ui.SetTransparent(opts.transparent || cfg.Transparent)
@@ -217,9 +227,17 @@ func run(opts options) error {
 	}
 
 	saveFn := func(repos []gh.Repo) { _ = c.Save(repos) }
-	locals := local.Index(cloneDir)
+	localsFile := filepath.Join(cfg.CacheDir, "locals.json")
+	locals, localsSaved := local.Load(localsFile)
 	app := ui.NewApp(client, initial, needRefresh, saveFn, resolveVersion())
-	app.SetLocalClones(locals)
+	if localsSaved {
+		app.SetLocalClones(locals)
+	}
+	app.SetLocalScan(func() map[string]string {
+		found := local.Discover(local.DefaultRoots(cloneDir, cfg.ScanDirs))
+		_ = local.Save(localsFile, found)
+		return found
+	})
 	app.SetPrintPath(opts.printPath)
 	app.SetSaveDir(downloadDir)
 	if pinnedTheme {
@@ -243,7 +261,8 @@ func run(opts options) error {
 		return err
 	}
 
-	return execute(final.(*ui.App).Result, env{cloneDir: cloneDir, downloadDir: downloadDir, client: client, cache: c, locals: locals})
+	app = final.(*ui.App)
+	return execute(app.Result, env{cloneDir: cloneDir, downloadDir: downloadDir, client: client, cache: c, locals: app.LocalClones()})
 }
 
 // env carries what the post-TUI actions need beyond the Result itself.
@@ -494,12 +513,14 @@ Options:
                    of the current directory (or GH_SELECT_DOWNLOAD_DIR)
   -p, --print-path print the selected repo's local path on stdout, cloning it
                    first if needed, for:  cd "$(gh select -p)"
-  --theme NAME     color theme: tokyonight (default), catppuccin, dracula,
+  --theme NAME     color theme: graphite (default), catppuccin, dracula,
                    everforest, gruvbox, kanagawa, nord, rose-pine, solarized,
-                   or a custom ~/.config/gh-select/themes/NAME.json
+                   tokyonight, or a custom ~/.config/gh-select/themes/NAME.json
                    (or GH_SELECT_THEME); ctrl+t cycles and remembers it
-  --border NAME    panel border: rounded (default), sharp, double, thick,
-                   hidden (or GH_SELECT_BORDER)
+  --border NAME    panel border: none (default), rounded, sharp, double,
+                   thick, hidden (or GH_SELECT_BORDER)
+  --icons NAME     nerd (default, needs a Nerd Font) or none for text tags
+                   (or GH_SELECT_ICONS)
   --transparent    keep the terminal's own background instead of the theme's
                    (or GH_SELECT_TRANSPARENT=1)
   -v, --version    show version
@@ -507,7 +528,9 @@ Options:
 
 Inside the TUI:
   type to filter your repos · enter to act on a repo
-  repos already cloned under --dir are badged "local" and offer open/pull
+  repos already cloned are badged "local" and offer open/pull; clones are
+  found under --dir, the current directory and home, plus any directories in
+  GH_SELECT_SCAN_DIRS (separated like PATH), which are searched first
   tab to search all of GitHub (a username, repo, or owner/name)
   partial clone: pick folders with space, then press c
   releases: / filters, n reads notes, o opens the release page, y copies a

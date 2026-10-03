@@ -475,7 +475,7 @@ func TestLocalCloneAwareMenu(t *testing.T) {
 	a.SetLocalClones(map[string]string{"remcostoeten/alpha": "/src/alpha"})
 	a = send(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
 
-	if !strings.Contains(a.View(), "local") {
+	if !strings.Contains(a.View(), iconLocal) {
 		t.Error("list view missing the local badge")
 	}
 

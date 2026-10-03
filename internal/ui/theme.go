@@ -26,6 +26,18 @@ func ac(light, dark string) lipgloss.AdaptiveColor {
 // themes maps a selectable name to its palette. Each pairs a canonical dark
 // variant with the scheme's light counterpart (or a hand-tuned equivalent).
 var themes = map[string]palette{
+	"graphite": {
+		bg:     ac("#fafafa", "#141414"),
+		fg:     ac("#3a3a3a", "#b4b4b4"),
+		dim:    ac("#9a9a9a", "#5e5e5e"),
+		hl:     ac("#6a58d0", "#a99bf5"),
+		cyan:   ac("#1f1f1f", "#dcdcdc"),
+		blue:   ac("#6b6b6b", "#8a8a8a"),
+		green:  ac("#4d7350", "#8fa88f"),
+		pink:   ac("#000000", "#ffffff"),
+		yellow: ac("#87692e", "#c2aa78"),
+		red:    ac("#a8403c", "#cf7b76"),
+	},
 	"tokyonight": {
 		bg:     ac("#e1e2e7", "#1a1b26"),
 		fg:     ac("#343b58", "#c0caf5"),
@@ -138,7 +150,7 @@ var themes = map[string]palette{
 
 var activeTheme = defaultTheme
 
-const defaultTheme = "tokyonight"
+const defaultTheme = "graphite"
 
 // borders maps a selectable name to the chrome's box border style.
 var borders = map[string]lipgloss.Border{
@@ -147,9 +159,10 @@ var borders = map[string]lipgloss.Border{
 	"double":  lipgloss.DoubleBorder(),
 	"thick":   lipgloss.ThickBorder(),
 	"hidden":  lipgloss.HiddenBorder(), // flat look: same layout, no visible frame
+	"none":    {},
 }
 
-const defaultBorder = "rounded"
+const defaultBorder = "none"
 
 // ThemeNames lists the selectable theme names, sorted.
 func ThemeNames() []string { return sortedKeys(themes) }
@@ -200,7 +213,7 @@ func cycleTheme() string {
 }
 
 // themeFile is the JSON shape of a custom theme. Colors missing from dark or
-// light fall back to the theme named in extends (tokyonight when empty).
+// light fall back to the theme named in extends (graphite when empty).
 type themeFile struct {
 	Extends string            `json:"extends"`
 	Dark    map[string]string `json:"dark"`
@@ -304,6 +317,47 @@ func (f themeFile) palette() (palette, error) {
 	return p, nil
 }
 
+// nerdIcons swaps the text tags in the repo list for Nerd Font glyphs.
+var nerdIcons = true
+
+// SetIcons picks the icon set: "nerd" (the default) or "none" for text tags.
+func SetIcons(name string) error {
+	switch strings.ToLower(name) {
+	case "", "nerd":
+		nerdIcons = true
+	case "none":
+		nerdIcons = false
+	default:
+		return fmt.Errorf("unknown icon set %q (valid: nerd, none)", name)
+	}
+	return nil
+}
+
+// tag renders a repo tag as its Nerd Font glyph, or its word without icons.
+func tag(style lipgloss.Style, icon, word string) string {
+	if nerdIcons {
+		return style.Render(icon)
+	}
+	return style.Render(word)
+}
+
+// labeled renders a detail value with its Nerd Font glyph in front, or just
+// the text without icons.
+func labeled(style lipgloss.Style, icon, text string) string {
+	if nerdIcons {
+		return style.Render(icon + " " + text)
+	}
+	return style.Render(text)
+}
+
+const (
+	iconPublic  = "\uf401" // nf-oct-repo
+	iconPrivate = "\uf456" // nf-oct-lock
+	iconFork    = "\uf402" // nf-oct-repo_forked
+	iconLocal   = "\uf413" // nf-oct-file_directory
+	iconStar    = "\uf41e" // nf-oct-star
+)
+
 // SetBorder switches the chrome's box border style. Call before constructing
 // the App; an empty name keeps the default.
 func SetBorder(name string) error {
@@ -315,6 +369,7 @@ func SetBorder(name string) error {
 		return fmt.Errorf("unknown border %q (valid: %s)", name, strings.Join(BorderNames(), ", "))
 	}
 	chromeBorder = b
+	frameless = strings.ToLower(name) == "none"
 	return nil
 }
 
@@ -328,6 +383,9 @@ var (
 	colBg, colFg, colDim, colHL, colCyan, colBlue lipgloss.AdaptiveColor
 	colGreen, colPink, colYellow, colRed          lipgloss.AdaptiveColor
 
+	// colSel tints the background of the highlighted row.
+	colSel lipgloss.AdaptiveColor
+
 	titleStyle lipgloss.Style
 
 	// App identity and screen context shown in the header chrome.
@@ -338,6 +396,7 @@ var (
 
 	privateBadge lipgloss.Style
 	publicBadge  lipgloss.Style
+	forkBadge    lipgloss.Style
 
 	selectedStyle lipgloss.Style
 
@@ -350,6 +409,9 @@ var (
 	markedStyle lipgloss.Style
 
 	keyStyle lipgloss.Style
+
+	// Column titles and the labels of key/value detail rows.
+	columnStyle lipgloss.Style
 )
 
 func applyPalette(p palette) {
@@ -358,6 +420,7 @@ func applyPalette(p palette) {
 	colFg, colDim, colHL = p.fg, p.dim, p.hl
 	colCyan, colBlue, colGreen = p.cyan, p.blue, p.green
 	colPink, colYellow, colRed = p.pink, p.yellow, p.red
+	colSel = ac(mixHex(p.bg.Light, p.fg.Light, 0.1), mixHex(p.bg.Dark, p.fg.Dark, 0.1))
 
 	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(colCyan)
 	appStyle = lipgloss.NewStyle().Bold(true).Foreground(colPink)
@@ -365,12 +428,27 @@ func applyPalette(p palette) {
 	dimStyle = lipgloss.NewStyle().Foreground(colDim)
 	privateBadge = lipgloss.NewStyle().Foreground(colYellow)
 	publicBadge = lipgloss.NewStyle().Foreground(colGreen)
+	forkBadge = lipgloss.NewStyle().Foreground(colBlue)
 	selectedStyle = lipgloss.NewStyle().Foreground(colPink).Bold(true)
 	headerStyle = lipgloss.NewStyle().Foreground(colGreen).Bold(true)
 	statusStyle = lipgloss.NewStyle().Foreground(colBlue)
 	errStyle = lipgloss.NewStyle().Foreground(colRed).Bold(true)
 	markedStyle = lipgloss.NewStyle().Foreground(colGreen)
 	keyStyle = lipgloss.NewStyle().Foreground(colCyan).Bold(true)
+	columnStyle = lipgloss.NewStyle().Foreground(colHL).Bold(true)
+}
+
+// mixHex blends two #rrggbb colors, t of the way from a to b.
+func mixHex(a, b string, t float64) string {
+	var ar, ag, ab, br, bg, bb int
+	if _, err := fmt.Sscanf(a, "#%02x%02x%02x", &ar, &ag, &ab); err != nil {
+		return a
+	}
+	if _, err := fmt.Sscanf(b, "#%02x%02x%02x", &br, &bg, &bb); err != nil {
+		return a
+	}
+	lerp := func(x, y int) int { return x + int(float64(y-x)*t+0.5) }
+	return fmt.Sprintf("#%02x%02x%02x", lerp(ar, br), lerp(ag, bg), lerp(ab, bb))
 }
 
 func init() {

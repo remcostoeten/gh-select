@@ -46,13 +46,13 @@ func (d compactDelegate) Render(w io.Writer, m list.Model, index int, item list.
 	r := it.repo
 	width := m.Width()
 
-	cursor := "  "
+	cursor := ""
 	nameStyle := lipgloss.NewStyle().Foreground(colFg)
 	if d.bare && !r.IsOwner {
 		nameStyle = dimStyle
 	}
 	if index == m.Index() {
-		cursor = selectedStyle.Render("❯ ")
+		cursor = selectRow("")
 		nameStyle = selectedStyle
 	}
 
@@ -67,18 +67,49 @@ func (d compactDelegate) Render(w io.Writer, m list.Model, index int, item list.
 		}
 	}
 
-	cols := d.columns(m.Items())
-	right := ""
-	if cols.lang+cols.stars > 0 && width >= 48 {
-		right = "  " + padRight(langLabel(r.Language), cols.lang) + "  " +
-			padLeft(dimStyle.Render(starLabel(r.StargazerCount)), cols.stars)
+	l := d.layout(m)
+	row := cursor + mark + padRight(nameStyle.Render(truncate(d.label(r), l.name)), l.name)
+	if l.cols.tags > 0 {
+		row += "  " + padRight(d.tags(r), l.cols.tags)
 	}
+	if l.cols.lang > 0 {
+		row += "  " + padRight(langLabel(r.Language), l.cols.lang)
+	}
+	stars := ""
+	if l.cols.stars > 0 {
+		stars = padLeft(dimStyle.Render(starLabel(r.StargazerCount)), l.cols.stars)
+	}
+	fmt.Fprint(w, padRight(row, width-lipgloss.Width(stars))+stars)
+}
 
-	prefix := cursor + mark
-	leftW := width - lipgloss.Width(right)
-	nameW := max(min(cols.name, leftW-lipgloss.Width(prefix)-cols.tags), 8)
-	left := prefix + padRight(nameStyle.Render(truncate(d.label(r), nameW)), nameW) + d.tags(r)
-	fmt.Fprint(w, padRight(left, leftW)+right)
+// rowLayout is how a list row splits its width: the name column and the
+// widths of the tags, language and stars columns after it.
+type rowLayout struct {
+	name int
+	cols rowColumns
+}
+
+// layout sizes the name column to the longest name, capped at about half the
+// row so the language column sits mid-row, and drops the metadata columns on
+// narrow lists.
+func (d compactDelegate) layout(m list.Model) rowLayout {
+	cols := d.columns(m.Items())
+	width := m.Width()
+	if width < 48 {
+		cols = rowColumns{name: cols.name}
+	}
+	mark := 0
+	if len(d.marked) > 0 {
+		mark = 2
+	}
+	fixed := mark
+	for _, c := range []int{cols.tags, cols.lang, cols.stars} {
+		if c > 0 {
+			fixed += c + 2
+		}
+	}
+	name := min(cols.name, max(width*9/20, 24), width-fixed)
+	return rowLayout{name: max(name, 8), cols: cols}
 }
 
 func (d compactDelegate) label(r gh.Repo) string {
@@ -89,17 +120,17 @@ func (d compactDelegate) label(r gh.Repo) string {
 }
 
 func (d compactDelegate) tags(r gh.Repo) string {
-	var out string
-	if _, cloned := d.locals[r.NameWithOwner]; cloned {
-		out += " " + publicBadge.Render("local")
-	}
+	var tags []string
 	if r.IsPrivate {
-		out += " " + privateBadge.Render("private")
+		tags = append(tags, tag(privateBadge, iconPrivate, "private"))
 	}
-	if out != "" {
-		out = " " + out
+	if r.IsFork {
+		tags = append(tags, tag(forkBadge, iconFork, "fork"))
 	}
-	return out
+	if _, cloned := d.locals[r.NameWithOwner]; cloned {
+		tags = append(tags, tag(publicBadge, iconLocal, "local"))
+	}
+	return strings.Join(tags, " ")
 }
 
 type rowColumns struct{ name, tags, lang, stars int }
@@ -117,7 +148,28 @@ func (d compactDelegate) columns(items []list.Item) rowColumns {
 		c.stars = max(c.stars, lipgloss.Width(starLabel(it.repo.StargazerCount)))
 	}
 	c.lang = min(c.lang, 16)
+	if c.lang > 0 {
+		c.lang = max(c.lang, lipgloss.Width("Language"))
+	}
+
 	return c
+}
+
+// header renders the column titles laid out exactly like Render lays out a row.
+func (d compactDelegate) header(m list.Model) string {
+	l := d.layout(m)
+	row := ""
+	if len(d.marked) > 0 {
+		row = "  "
+	}
+	row += padRight(columnStyle.Render("Name"), l.name)
+	if l.cols.tags > 0 {
+		row += "  " + strings.Repeat(" ", l.cols.tags)
+	}
+	if l.cols.lang > 0 {
+		row += "  " + padRight(columnStyle.Render("Language"), l.cols.lang)
+	}
+	return padRight(row, m.Width())
 }
 
 func padRight(s string, w int) string {

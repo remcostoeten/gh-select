@@ -142,10 +142,10 @@ func (p *pickerModel) body(innerH int) string {
 
 	var b strings.Builder
 	for i := start; i < end; i++ {
-		pointer := "  "
+		pointer := ""
 		name := rows[i]
 		if i == p.cursor {
-			pointer = selectedStyle.Render(" ❯")
+			pointer = selectRow("")
 			name = selectedStyle.Render(name)
 		} else {
 			name = keyStyle.Render(name)
@@ -153,7 +153,7 @@ func (p *pickerModel) body(innerH int) string {
 		if p.tags[rows[i]] {
 			name += dimStyle.Render("  tag")
 		}
-		fmt.Fprintf(&b, "%s %s\n", pointer, name)
+		fmt.Fprintf(&b, "%s%s\n", pointer, name)
 	}
 	return b.String()
 }

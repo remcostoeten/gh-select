@@ -56,11 +56,11 @@ func TestSortCycle(t *testing.T) {
 		t.Fatalf("default order = %q", got)
 	}
 	a = send(t, a, tea.KeyMsg{Type: tea.KeyCtrlS})
-	if got := itemNames(a); got != "gamma,beta,alpha" || !strings.Contains(a.listPanelTitle(), "by stars") {
-		t.Fatalf("by stars = %q, title %q", got, a.listPanelTitle())
+	if got := itemNames(a); got != "gamma,beta,alpha" || !strings.Contains(a.listSummary(), "by stars") {
+		t.Fatalf("by stars = %q, title %q", got, a.listSummary())
 	}
 	a = send(t, a, tea.KeyMsg{Type: tea.KeyCtrlS})
-	if got := itemNames(a); got != "alpha,beta,gamma" || !strings.Contains(a.listPanelTitle(), "by name") {
+	if got := itemNames(a); got != "alpha,beta,gamma" || !strings.Contains(a.listSummary(), "by name") {
 		t.Fatalf("by name = %q", got)
 	}
 	a = send(t, a, tea.KeyMsg{Type: tea.KeyCtrlS})

@@ -637,13 +637,13 @@ func (t *treeModel) chromeParts(spinnerFrame string, innerH int) (context, body,
 }
 
 func (t *treeModel) renderRow(i int, n *node) string {
-	pointer := "  "
+	pointer := ""
 	if i == t.cursor {
-		pointer = selectedStyle.Render(" ❯")
+		pointer = selectRow("")
 	}
 
 	if n.name == ".." {
-		return fmt.Sprintf("%s   %s\n", pointer, dimStyle.Render("../"))
+		return fmt.Sprintf("%s    %s\n", pointer, dimStyle.Render("../"))
 	}
 
 	box := dimStyle.Render("[ ]")
@@ -658,7 +658,7 @@ func (t *treeModel) renderRow(i int, n *node) string {
 		} else {
 			name = keyStyle.Render(name)
 		}
-		return fmt.Sprintf("%s %s %s\n", pointer, box, name)
+		return fmt.Sprintf("%s%s %s\n", pointer, box, name)
 	}
 
 	name := n.name
@@ -667,7 +667,7 @@ func (t *treeModel) renderRow(i int, n *node) string {
 	} else {
 		name = dimStyle.Render(name)
 	}
-	return fmt.Sprintf("%s %s %s\n", pointer, box, name)
+	return fmt.Sprintf("%s%s %s\n", pointer, box, name)
 }
 
 // renderPreview prepares file bytes for display: it guards against binary
