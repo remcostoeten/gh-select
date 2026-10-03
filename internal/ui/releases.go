@@ -275,7 +275,12 @@ func (r *releasesModel) update(msg tea.Msg) (tea.Cmd, releasesOutcome) {
 		return nil, releasesContinue
 	}
 	if key.String() == "ctrl+c" {
-		return nil, releasesQuit
+		if r.filter == "" || r.level == levelReader {
+			return nil, releasesQuit
+		}
+		r.filter = ""
+		r.cursor, r.assetCursor = 0, 0
+		return nil, releasesContinue
 	}
 	r.status = ""
 	if r.filtering {

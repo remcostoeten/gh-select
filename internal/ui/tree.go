@@ -293,6 +293,11 @@ func (t *treeModel) handleKey(key tea.KeyMsg) (tea.Cmd, treeOutcome) {
 	// While the filter input is active, capture text instead of navigating.
 	if t.filtering {
 		switch key.String() {
+		case "ctrl+c":
+			if t.filter == "" {
+				return nil, treeQuit
+			}
+			t.filter = ""
 		case "enter", "down", "up":
 			t.filtering = false // keep the filter applied, return to navigation
 		case "esc":
@@ -313,6 +318,11 @@ func (t *treeModel) handleKey(key tea.KeyMsg) (tea.Cmd, treeOutcome) {
 
 	switch key.String() {
 	case "ctrl+c":
+		if t.filter != "" {
+			t.filter = ""
+			t.clampCursor()
+			return nil, treeContinue
+		}
 		return nil, treeQuit
 	case "esc":
 		if t.filter != "" { // first esc clears an applied filter
@@ -513,7 +523,7 @@ func treeHelpBody() string {
 		{"/", "filter the current folder"},
 		{"esc", "clear filter · back"},
 		{"q", "back to actions"},
-		{"ctrl+c", "quit"},
+		{"ctrl+c", "clear filter, or quit"},
 	})
 }
 

@@ -61,6 +61,11 @@ const (
 func (p *pickerModel) handleKey(keyStr string, runes []rune, isRunes bool) pickerOutcome {
 	switch keyStr {
 	case "ctrl+c":
+		if p.query != "" {
+			p.query = ""
+			p.cursor = 0
+			return pickerContinue
+		}
 		return pickerQuit
 	case "esc":
 		if p.query != "" {

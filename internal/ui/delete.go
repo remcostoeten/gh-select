@@ -100,6 +100,10 @@ func (a *App) updateConfirmDelete(msg tea.Msg) (tea.Model, tea.Cmd) {
 	c := a.confirm
 	switch key.String() {
 	case "ctrl+c":
+		if c.typed != "" {
+			c.typed, c.status = "", ""
+			return a, nil
+		}
 		return a, tea.Quit
 	case "esc":
 		a.confirm = nil

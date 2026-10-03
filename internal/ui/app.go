@@ -572,6 +572,9 @@ func (a *App) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch key.String() {
 	case "ctrl+c":
+		if a.query != "" {
+			return a.editQuery("")
+		}
 		return a, tea.Quit
 	case "?":
 		if a.query == "" {
@@ -924,6 +927,6 @@ func listHelpBody() string {
 		{"ctrl+d", "review and delete every marked repo"},
 		{"", ""},
 		{"?", "this overlay with API rate limits (on an empty search)"},
-		{"ctrl+c", "quit"},
+		{"ctrl+c", "clear the search, or quit"},
 	})
 }
