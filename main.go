@@ -5,7 +5,6 @@ package main
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -71,51 +70,42 @@ func resolveVersion() string {
 }
 
 func main() {
-	var (
-		noCache     = flag.Bool("no-cache", false, "bypass cache and fetch fresh data")
-		refreshOnly = flag.Bool("refresh", false, "refresh the cache and exit")
-		showVer     = flag.Bool("version", false, "show version information")
-		showLimits  = flag.Bool("limits", false, "show GitHub API rate limit usage and exit")
-		theme       = flag.String("theme", "", "color theme (also GH_SELECT_THEME)")
-		border      = flag.String("border", "", "panel border style (also GH_SELECT_BORDER)")
-		icons       = flag.String("icons", "", "icon set: nerd or none (also GH_SELECT_ICONS)")
-		transparent = flag.Bool("transparent", false, "don't paint the app background (also GH_SELECT_TRANSPARENT)")
-		cloneDir    = flag.String("dir", "", "directory to clone into (also GH_SELECT_CLONE_DIR)")
-		printPath   = flag.Bool("print-path", false, "print the selected repo's local path, cloning it if needed")
-		downloadDir = flag.String("download-dir", "", "directory release assets and saved files go to (also GH_SELECT_DOWNLOAD_DIR)")
-	)
-	flag.BoolVar(noCache, "n", false, "bypass cache (shorthand)")
-	flag.BoolVar(refreshOnly, "r", false, "refresh cache and exit (shorthand)")
-	flag.BoolVar(showVer, "v", false, "show version (shorthand)")
-	flag.StringVar(cloneDir, "d", "", "clone directory (shorthand)")
-	flag.BoolVar(printPath, "p", false, "print the selected repo's local path (shorthand)")
-	flag.Usage = usage
-	flag.Parse()
-
-	if *showVer {
-		fmt.Printf("gh-select %s\n", resolveVersion())
-		return
+	inv, err := route(os.Args[1:])
+	if err != nil {
+		printUsageError(err)
+		os.Exit(2)
 	}
-	if *showLimits || flag.Arg(0) == "limits" {
-		if err := limits(); err != nil {
-			fmt.Fprintln(os.Stderr, errLine(err.Error()))
-			os.Exit(1)
+	if inv.help {
+		if inv.command == "" {
+			printHelp(os.Stdout)
+		} else {
+			printCommandHelp(os.Stdout, inv.command)
 		}
 		return
 	}
 
-	opts := options{
-		noCache:     *noCache,
-		refreshOnly: *refreshOnly,
-		theme:       *theme,
-		border:      *border,
-		icons:       *icons,
-		transparent: *transparent,
-		cloneDir:    *cloneDir,
-		printPath:   *printPath,
-		downloadDir: *downloadDir,
+	switch inv.command {
+	case "version":
+		fmt.Printf("gh-select %s\n", resolveVersion())
+		return
+	case "doctor":
+		err = doctor()
+	case "limits":
+		err = limits()
+	case "refresh":
+		err = refresh()
+	default:
+		var opts options
+		if opts, err = parseOptions(inv.rest); err != nil {
+			printUsageError(err)
+			os.Exit(2)
+		}
+		err = run(opts)
 	}
-	if err := run(opts); err != nil {
+	if errors.Is(err, errCancelled) {
+		os.Exit(130)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, errLine(err.Error()))
 		os.Exit(1)
 	}
@@ -125,7 +115,6 @@ func main() {
 // that positional parameters had stopped being readable.
 type options struct {
 	noCache     bool
-	refreshOnly bool
 	theme       string
 	border      string
 	icons       string
@@ -136,10 +125,6 @@ type options struct {
 }
 
 func run(opts options) error {
-	if flag.Arg(0) == "doctor" {
-		return doctor()
-	}
-
 	cfg := config.Load()
 
 	// Flags win over environment; empty keeps the built-in default.
@@ -193,21 +178,8 @@ func run(opts options) error {
 	}
 
 	c := cache.New(cfg.CacheDir, cfg.CacheTTL)
-	noCache, refreshOnly := opts.noCache, opts.refreshOnly
+	noCache := opts.noCache
 	entry, cached := c.Load()
-
-	// refresh-only: fetch synchronously, persist, and exit.
-	if refreshOnly {
-		repos, err := client.FetchRepos()
-		if err != nil {
-			return err
-		}
-		if err := c.Save(repos); err != nil {
-			return err
-		}
-		fmt.Printf("Refreshed %d repositories\n", len(repos))
-		return nil
-	}
 
 	// Cold start with no usable cache: fetch up front so we never show an empty
 	// list.
@@ -272,6 +244,9 @@ func run(opts options) error {
 	}
 
 	app = final.(*ui.App)
+	if opts.printPath && app.Result.Action == ui.ActionNone {
+		return errCancelled
+	}
 	return execute(app.Result, env{cloneDir: cloneDir, downloadDir: downloadDir, client: client, cache: c, locals: app.LocalClones()})
 }
 
@@ -445,7 +420,25 @@ func reportCopy(ok bool, label, value string) error {
 	return nil
 }
 
-func errLine(s string) string { return "Error: " + s }
+func errLine(s string) string { return "  " + painterFor(os.Stderr).red("error") + " " + s }
+
+// refresh fetches the repo list, saves it to the cache and exits.
+func refresh() error {
+	cfg := config.Load()
+	client, err := gh.NewClient()
+	if err != nil {
+		return err
+	}
+	repos, err := client.FetchRepos()
+	if err != nil {
+		return err
+	}
+	if err := cache.New(cfg.CacheDir, cfg.CacheTTL).Save(repos); err != nil {
+		return err
+	}
+	fmt.Printf("Refreshed %d repositories\n", len(repos))
+	return nil
+}
 
 // doctor reports whether the tools and authentication gh-select relies on are
 // present, without requiring a successful login itself.
@@ -503,52 +496,4 @@ func orMissing(path, missingHint string) string {
 		return "not found, " + missingHint
 	}
 	return path
-}
-
-func usage() {
-	fmt.Fprint(os.Stderr, `gh-select: interactive GitHub repository selector
-
-Usage:
-  gh select [options]
-  gh select doctor          check tools and authentication
-  gh select limits          show GitHub API rate limit usage (or --limits)
-
-Options:
-  -n, --no-cache   bypass cache, fetch fresh data
-  -r, --refresh    refresh cache and exit
-  -d, --dir DIR    clone into DIR instead of the current directory
-                   (or GH_SELECT_CLONE_DIR)
-  --download-dir DIR
-                   save release assets and browsed files into DIR instead
-                   of the current directory (or GH_SELECT_DOWNLOAD_DIR)
-  -p, --print-path print the selected repo's local path on stdout, cloning it
-                   first if needed, for:  cd "$(gh select -p)"
-  --theme NAME     color theme: catppuccin (default), dracula, everforest,
-                   graphite, gruvbox, kanagawa, nord, rose-pine, solarized,
-                   tokyonight, or a custom ~/.config/gh-select/themes/NAME.json
-                   (or GH_SELECT_THEME); ctrl+t cycles and remembers it
-  --border NAME    panel border: none (default), rounded, sharp, double,
-                   thick, hidden (or GH_SELECT_BORDER)
-  --icons NAME     nerd (default, needs a Nerd Font) or none for text tags
-                   (or GH_SELECT_ICONS)
-  --transparent    keep the terminal's own background instead of the theme's
-                   (or GH_SELECT_TRANSPARENT=1)
-  -v, --version    show version
-  -h, --help       show this help
-
-Inside the TUI:
-  type to filter your repos · enter to act on a repo
-  repos already cloned are badged "local" and offer open/pull; clones are
-  found under --dir, the current directory and home, plus any directories in
-  GH_SELECT_SCAN_DIRS (separated like PATH), which are searched first
-  tab to search all of GitHub (a username, repo, or owner/name)
-  partial clone: pick folders with space, then press c
-  releases: / filters, n reads notes, o opens the release page, y copies a
-  link; in a release's downloads the file for this machine is preselected,
-  v previews, space marks several, enter downloads, x downloads and unpacks.
-  Downloads are verified against the release's checksum file when it has one.
-  ctrl+x marks repos you own, ctrl+d deletes every marked one on GitHub
-  (permanent; retype the shown phrase to confirm, and note that deleting
-  needs the delete_repo scope: gh auth refresh -s delete_repo)
-`)
 }
