@@ -91,6 +91,68 @@ func TestDiscoverSkipsHeavyDirsAndPrefersEarlierRoots(t *testing.T) {
 	}
 }
 
+func TestDiscoverFindsWorktreesAndSubmodules(t *testing.T) {
+	root := t.TempDir()
+	main := filepath.Join(root, "main")
+	writeClone(t, main, "https://github.com/me/main.git")
+
+	wtGit := filepath.Join(main, ".git", "worktrees", "feature")
+	if err := os.MkdirAll(wtGit, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wtGit, "commondir"), []byte("../..\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(root, "work", "feature")
+	if err := os.MkdirAll(wt, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+wtGit+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	modGit := filepath.Join(root, "other", ".git", "modules", "lib")
+	writeClone(t, filepath.Dir(filepath.Dir(modGit)), "https://github.com/me/other.git")
+	if err := os.MkdirAll(modGit, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "[remote \"origin\"]\n\turl = git@github.com:acme/lib.git\n"
+	if err := os.WriteFile(filepath.Join(modGit, "config"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(root, "vendored", "lib")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rel, err := filepath.Rel(sub, modGit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, ".git"), []byte("gitdir: "+rel+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	idx := Discover([]Root{{Dir: filepath.Join(root, "work"), Depth: 2}, {Dir: filepath.Join(root, "vendored"), Depth: 2}})
+	if got := idx["me/main"]; got != wt {
+		t.Errorf("worktree = %q, want %q", got, wt)
+	}
+	if got := idx["acme/lib"]; got != sub {
+		t.Errorf("submodule = %q, want %q", got, sub)
+	}
+}
+
+func TestDefaultRootsPutsScanDirsFirst(t *testing.T) {
+	roots := DefaultRoots("/clones", []string{"/extra/a", "/extra/b"})
+	if len(roots) < 3 {
+		t.Fatalf("roots = %v, want scan dirs then clone dir", roots)
+	}
+	for i, want := range []string{"/extra/a", "/extra/b", "/clones"} {
+		if roots[i].Dir != want {
+			t.Errorf("roots[%d] = %q, want %q", i, roots[i].Dir, want)
+		}
+	}
+}
+
 func TestLoadDropsVanishedClones(t *testing.T) {
 	dir := t.TempDir()
 	kept := filepath.Join(dir, "kept")
