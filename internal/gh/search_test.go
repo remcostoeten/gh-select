@@ -22,6 +22,14 @@ func TestPlanSearch(t *testing.T) {
 		{in: "github heygen liveav", exact: "heygen/liveav", owner: "heygen", filter: "liveav", query: "heygen liveav"},
 		{in: "spf13-cobra", exact: "spf13/cobra", owner: "spf13-cobra", query: "spf13-cobra in:name"},
 		{in: "react language:go", owner: "react", query: "react in:name language:go"},
+		{in: "user:facebook", query: "user:facebook"},
+		{in: "language:go is:private", query: "language:go is:private"},
+		{in: "user:facebook react", query: "react in:name user:facebook"},
+		{in: "stars:>1000 foo", query: "foo in:name stars:>1000"},
+		{in: "https://github.com/"},
+		{in: "git@github.com:"},
+		{in: "https://gist.github.com/user/abc123"},
+		{in: "https://api.github.com/repos/o/r"},
 	}
 	for _, c := range cases {
 		got := planSearch(c.in)
@@ -49,6 +57,9 @@ func TestPlanSearch(t *testing.T) {
 		"git clone https://github.com/" + live + ".git",
 		"git clone git@github.com:" + live + ".git my-dir",
 		"https://github.com/" + live + "?tab=readme#install",
+		"ssh://git@github.com:22/" + live + ".git",
+		"(https://github.com/" + live + ")",
+		"<https://github.com/" + live + ">.",
 	}
 	for _, in := range pasted {
 		got := planSearch(in)
@@ -62,6 +73,23 @@ func TestPlanSearch(t *testing.T) {
 	}
 	if got := planSearch("github/gitignore"); len(got.exact) != 1 || got.exact[0] != "github/gitignore" {
 		t.Errorf("github owner = %+v, want exact github/gitignore", got)
+	}
+}
+
+func TestIsRepoURL(t *testing.T) {
+	for in, want := range map[string]bool{
+		"https://github.com/a/b":      true,
+		"www.github.com/a":            true,
+		"git@github.com:a/b.git":      true,
+		"remcostoeten.github.io/blog": false,
+		"https://api.github.com/a/b":  false,
+		"gist.github.com/a/b":         false,
+		"github":                      false,
+		"lang:go":                     false,
+	} {
+		if got := IsRepoURL(in); got != want {
+			t.Errorf("IsRepoURL(%q) = %v, want %v", in, got, want)
+		}
 	}
 }
 

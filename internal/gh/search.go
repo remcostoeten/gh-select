@@ -52,12 +52,17 @@ const maxLoginGuesses = 2
 // maxHyphenSplits bounds the owner/name guesses tried for "owner-repo" input.
 const maxHyphenSplits = 3
 
-// Matches a github host with any TLD and the separator before the path, as in
-// https://www.github.com/, git@github.nl: or junk://github.co.uk/.
-var githubHost = regexp.MustCompile(`(?i)(?:^|[\s/@.])github(?:\.[a-z]{2,})+\s*[:/]+`)
+// Matches a github host with any TLD, the separator and an optional port before
+// the path, as in https://www.github.com/, git@github.nl: or
+// ssh://git@github.com:22/, but not subdomains such as gist. or api.
+var githubHost = regexp.MustCompile(`(?i)(?:^|[\s/@])(?:www\.)?github(?:\.[a-z]{2,})+\s*[:/]+(?:\d+/)?`)
 
 // Matches search qualifiers that pass straight through to GitHub.
 var qualifier = regexp.MustCompile(`(?i)^(?:language|is|topic|stars|archived|fork|user|org):\S+$`)
+
+// Matches the qualifiers the UI re-applies to an owner listing; any other one
+// means only GitHub search can honor the query.
+var listableQualifier = regexp.MustCompile(`(?i)^(?:language|is):`)
 
 // searchPlan describes every lookup one search input fans out into.
 type searchPlan struct {
@@ -73,6 +78,17 @@ type searchPlan struct {
 // "owner name", "owner-name", a github URL with any scheme or TLD, an SSH
 // remote or a pasted `git clone` command.
 func planSearch(input string) searchPlan {
+	plan, quals := planWords(input)
+	for _, q := range quals {
+		if !listableQualifier.MatchString(q) {
+			plan.exact, plan.owner, plan.filter, plan.ownerFallback = nil, "", "", false
+			break
+		}
+	}
+	return plan
+}
+
+func planWords(input string) (searchPlan, []string) {
 	var quals, words []string
 	for _, f := range strings.Fields(input) {
 		if qualifier.MatchString(f) {
@@ -91,9 +107,10 @@ func planSearch(input string) searchPlan {
 
 	if loc := githubHost.FindStringIndex(text); loc != nil {
 		owner, name := splitRef(firstField(text[loc[1]:]))
-		if owner != "" {
-			return refPlan(owner, name, false, withQuals)
+		if owner == "" {
+			return searchPlan{query: withQuals("")}, quals
 		}
+		return refPlan(owner, name, false, withQuals), quals
 	}
 
 	if len(words) > 1 && isGithubWord(words[0]) {
@@ -101,13 +118,15 @@ func planSearch(input string) searchPlan {
 	}
 	switch {
 	case len(words) == 0:
-		return searchPlan{}
+		return searchPlan{query: withQuals("")}, quals
+	case len(words) == 1 && strings.Contains(words[0], "://"):
+		return searchPlan{query: withQuals("")}, quals
 	case len(words) == 1 && strings.Contains(words[0], "/"):
 		owner, name := splitRef(words[0])
 		if owner == "" || strings.HasPrefix(words[0], "/") {
-			return searchPlan{query: withQuals(strings.Trim(words[0], "/") + " in:name")}
+			return searchPlan{query: withQuals(strings.Trim(words[0], "/") + " in:name")}, quals
 		}
-		return refPlan(owner, name, true, withQuals)
+		return refPlan(owner, name, true, withQuals), quals
 	case len(words) == 1:
 		word := strings.TrimSuffix(words[0], ".git")
 		return searchPlan{
@@ -115,7 +134,7 @@ func planSearch(input string) searchPlan {
 			owner:   word,
 			query:   withQuals(word + " in:name"),
 			byStars: true,
-		}
+		}, quals
 	}
 	rest := strings.Join(words[1:], "-")
 	return searchPlan{
@@ -124,7 +143,7 @@ func planSearch(input string) searchPlan {
 		filter:        rest,
 		query:         withQuals(strings.Join(words, " ")),
 		ownerFallback: true,
-	}
+	}, quals
 }
 
 func refPlan(owner, name string, fallback bool, withQuals func(string) string) searchPlan {
@@ -144,6 +163,7 @@ func refPlan(owner, name string, fallback bool, withQuals func(string) string) s
 func splitRef(path string) (owner, name string) {
 	path, _, _ = strings.Cut(path, "?")
 	path, _, _ = strings.Cut(path, "#")
+	path = strings.TrimRight(strings.TrimLeft(path, "([<\"'`"), ")]>.,;\"'`")
 	segs := strings.Split(strings.Trim(path, "/"), "/")
 	owner = strings.TrimSpace(segs[0])
 	if len(segs) > 1 {
