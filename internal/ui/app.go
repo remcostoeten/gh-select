@@ -300,6 +300,9 @@ func (a *App) setScope(next searchScope) (tea.Model, tea.Cmd) {
 // instant local fuzzy filtering, or a debounced GitHub search.
 func (a *App) editQuery(next string) (tea.Model, tea.Cmd) {
 	a.query = next
+	if a.scope != scopeGitHub && gh.IsRepoURL(next) {
+		return a.setScope(scopeGitHub)
+	}
 	if a.scope != scopeGitHub {
 		a.applyFilter()
 		return a, nil
@@ -770,7 +773,7 @@ func (a *App) viewList() string {
 	case scopeStarred:
 		placeholder = "filter your starred repos…"
 	case scopeGitHub:
-		placeholder = "search GitHub, e.g. torvalds/linux"
+		placeholder = "search GitHub: torvalds/linux, an owner, a name or a pasted URL"
 	}
 	cw := contentWidth(a.width)
 	search := panel("search", searchField(a.query, placeholder), cw, searchBoxLines, true)
