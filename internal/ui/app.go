@@ -736,8 +736,11 @@ func (a *App) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, cmd
 	}
 
-	if key.Type == tea.KeyRunes {
+	switch key.Type {
+	case tea.KeyRunes:
 		return a.editQuery(a.query + string(key.Runes))
+	case tea.KeySpace:
+		return a.editQuery(a.query + " ")
 	}
 	return a, nil
 }
