@@ -557,3 +557,24 @@ func TestShortCount(t *testing.T) {
 		}
 	}
 }
+
+func TestBackspaceLeavesActionMenu(t *testing.T) {
+	a := NewApp(nil, sampleRepos, false, nil, "test")
+	a = send(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+	a = send(t, a, key("enter"))
+	a = send(t, a, tea.KeyMsg{Type: tea.KeyBackspace})
+	if a.screen != screenList {
+		t.Fatalf("screen = %v, want list", a.screen)
+	}
+}
+
+func TestBackspaceLeavesPickerOnlyWhenQueryIsEmpty(t *testing.T) {
+	p := newPicker([]string{"main", "dev"})
+	p.handleKey("d", []rune("d"), true)
+	if got := p.handleKey("backspace", nil, false); got != pickerContinue || p.query != "" {
+		t.Fatalf("first backspace: outcome=%v query=%q", got, p.query)
+	}
+	if got := p.handleKey("backspace", nil, false); got != pickerBack {
+		t.Fatalf("second backspace: outcome=%v, want back", got)
+	}
+}

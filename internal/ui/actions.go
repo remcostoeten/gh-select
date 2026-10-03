@@ -62,7 +62,7 @@ func (a *App) updateActions(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "q", "ctrl+c":
 		return a, tea.Quit
-	case "esc", "left", "h":
+	case "esc", "left", "h", "backspace":
 		a.screen = screenList
 		a.status = "" // don't carry an actions-screen message back to the list
 		return a, nil

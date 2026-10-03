@@ -90,11 +90,12 @@ func (p *pickerModel) handleKey(keyStr string, runes []rune, isRunes bool) picke
 		}
 		return pickerContinue
 	case "backspace":
-		if p.query != "" {
-			r := []rune(p.query)
-			p.query = string(r[:len(r)-1])
-			p.cursor = 0
+		if p.query == "" {
+			return pickerBack
 		}
+		r := []rune(p.query)
+		p.query = string(r[:len(r)-1])
+		p.cursor = 0
 		return pickerContinue
 	}
 	if isRunes {
