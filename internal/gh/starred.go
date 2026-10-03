@@ -15,6 +15,8 @@ query($cursor: String) {
         updatedAt
         primaryLanguage { name }
         owner { login }
+        isFork
+        parent { nameWithOwner }
       }
       pageInfo { hasNextPage endCursor }
     }
@@ -37,6 +39,10 @@ type starredResponse struct {
 				Owner struct {
 					Login string `json:"login"`
 				} `json:"owner"`
+				IsFork bool `json:"isFork"`
+				Parent *struct {
+					NameWithOwner string `json:"nameWithOwner"`
+				} `json:"parent"`
 			} `json:"nodes"`
 			PageInfo struct {
 				HasNextPage bool   `json:"hasNextPage"`
@@ -67,6 +73,8 @@ func (c *Client) FetchStarred() ([]Repo, error) {
 				Language:       n.PrimaryLanguage.Name,
 				OwnerLogin:     n.Owner.Login,
 				IsOwner:        n.Owner.Login == resp.Viewer.Login,
+				IsFork:         n.IsFork,
+				Parent:         parentName(n.Parent),
 			})
 		}
 		if !page.PageInfo.HasNextPage {

@@ -21,6 +21,7 @@ type restRepo struct {
 	StargazersCount int       `json:"stargazers_count"`
 	UpdatedAt       time.Time `json:"updated_at"`
 	Language        string    `json:"language"`
+	Fork            bool      `json:"fork"`
 	Owner           struct {
 		Login string `json:"login"`
 	} `json:"owner"`
@@ -35,6 +36,7 @@ func (r restRepo) toRepo() Repo {
 		UpdatedAt:      r.UpdatedAt,
 		Language:       r.Language,
 		OwnerLogin:     r.Owner.Login,
+		IsFork:         r.Fork,
 	}
 }
 
