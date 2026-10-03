@@ -19,6 +19,7 @@ Commands:
   vet            Run go vet ./...
   check          Run vet, test and build
   install        Build and install as a local gh extension (gh select)
+  demo           Build, then re-record assets/gh-select-demo.gif with vhs
   install-bin    Build and copy the binary to \$PREFIX/bin (default ~/.local/bin)
   uninstall      Remove the gh extension and the binary in \$PREFIX/bin
   clean          Remove the built binary
@@ -115,6 +116,13 @@ function clean() {
 	rm -f "$BINARY"
 }
 
+function demo() {
+	require vhs
+	build
+	info "Recording assets/gh-select-demo.gif"
+	vhs scripts/demo.tape
+}
+
 function main() {
 	local command="${1:-help}"
 	shift || true
@@ -132,6 +140,7 @@ function main() {
 		run_tests
 		build
 		;;
+	demo) demo ;;
 	install) install_extension ;;
 	install-bin) install_bin ;;
 	uninstall) uninstall ;;
