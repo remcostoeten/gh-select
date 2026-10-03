@@ -4,6 +4,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -133,8 +134,9 @@ type App struct {
 	marked   map[string]gh.Repo
 	markNote string
 
-	listHelp bool
-	rate     rateLimits
+	listHelp   bool
+	helpScroll int
+	rate       rateLimits
 
 	// retype-to-confirm delete screen; confirmReturn is the screen esc goes back to
 	confirm       *confirmModel
@@ -565,12 +567,23 @@ func (a *App) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	if a.listHelp {
+		_, lh := a.listPanelSize()
+		_, maxScroll := a.listHelpLines(lh)
 		switch key.String() {
 		case "ctrl+c":
 			return a, tea.Quit
 		case "?", "esc", "q", "enter":
 			a.listHelp = false
+		case "up", "k":
+			a.helpScroll--
+		case "down", "j":
+			a.helpScroll++
+		case "pgup":
+			a.helpScroll -= lh - 2
+		case "pgdown":
+			a.helpScroll += lh - 2
 		}
+		a.helpScroll = max(0, min(a.helpScroll, maxScroll))
 		return a, nil
 	}
 
@@ -810,7 +823,9 @@ func (a *App) viewList() string {
 	search := panel("search", searchField(a.query, placeholder), cw, searchBoxLines, true)
 	if a.listHelp {
 		_, lh := a.listPanelSize()
-		return search + "\n" + panel("help", listHelpBody()+"\n"+a.rateLimitsBody(), cw, lh, true)
+		lines, maxScroll := a.listHelpLines(lh)
+		a.helpScroll = min(a.helpScroll, maxScroll)
+		return search + "\n" + panel("help", strings.Join(lines[a.helpScroll:], "\n"), cw, lh, true)
 	}
 
 	body := a.list.View()
@@ -882,6 +897,10 @@ func (a *App) viewBranches() string {
 
 func (a *App) listFooter() string {
 	if a.listHelp {
+		_, lh := a.listPanelSize()
+		if _, maxScroll := a.listHelpLines(lh); maxScroll > 0 {
+			return keyHint([2]string{"↑↓", "scroll"}, [2]string{"?", "close"}, [2]string{"^C", "quit"})
+		}
 		return keyHint([2]string{"?", "close"}, [2]string{"^C", "quit"})
 	}
 	scopeHint := map[searchScope][2]string{
@@ -913,6 +932,13 @@ func (a *App) listFooter() string {
 		[2]string{"type", "search"},
 		last,
 	)
+}
+
+// listHelpLines is the overlay's content, and how far it can scroll in a panel
+// of height h.
+func (a *App) listHelpLines(h int) (lines []string, maxScroll int) {
+	lines = strings.Split(strings.TrimRight(listHelpBody()+"\n"+a.rateLimitsBody(), "\n"), "\n")
+	return lines, max(0, len(lines)-(h-2))
 }
 
 func listHelpBody() string {

@@ -28,7 +28,7 @@ type rateLimits struct {
 }
 
 func (a *App) openListHelp() (tea.Model, tea.Cmd) {
-	a.listHelp = true
+	a.listHelp, a.helpScroll = true, 0
 	return a, tea.Batch(a.fetchRateLimitsCmd(), rateTickCmd())
 }
 
