@@ -81,7 +81,9 @@ gh select
      directory, the clone root or the current directory) and
      `is:mine`, e.g.
      `cli lang:go is:mine`
-   - `?` on an empty search shows every key and your live GitHub API rate
+   - `?` on an empty search shows credits with links you open with one key
+     (`g` GitHub, `w` website, `s` source, `i` new issue, `r` release
+     notes), every key, and your live GitHub API rate
      limits: usage per bucket, how far each window has run, and when the
      current pace would run it dry. `gh select limits` prints the same
 2. **Choose an action:**

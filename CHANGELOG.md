@@ -36,10 +36,12 @@ All notable changes to gh-select are documented here.
   `~/.config/gh-select/theme`.
 
 ### Changed
-- **Footer**: a hairline separates the screen from the key hints, and every
-  screen ends with a dim line showing the version, build commit and its date
-  on the left, and the author and source on the right. The version moved
-  there from the header.
+- **Header and footer**: the header shows the version, author, source, last
+  update and build commit, dropping details from the end on narrow
+  terminals, and a hairline separates the screen from the key hints.
+- **Credits in the `?` overlay**: what gh-select is, who made it, the
+  license and build, and links to the author's GitHub and website, the
+  source, new issues and the release notes, each opened with one key.
 - **Frameless layout**: panels drop their boxes for a title row, the search
   field sits on a hairline rule, side panels are split by a single line and
   the highlighted row gets a full-width tinted bar. `--border rounded` brings

@@ -101,7 +101,7 @@ type branchesLoadedMsg struct {
 type App struct {
 	client *gh.Client
 	saveFn func([]gh.Repo) // persist freshly fetched repos to cache
-	meta   footerMeta      // build and source line pinned under the key hints
+	meta   buildMeta       // version, author, source and build shown in the header
 
 	screen   screen
 	list     list.Model
@@ -183,7 +183,7 @@ func NewApp(client *gh.Client, initial []gh.Repo, refresh bool, saveFn func([]gh
 	a := &App{
 		client:  client,
 		saveFn:  saveFn,
-		meta:    footerMeta{version: version},
+		meta:    buildMeta{version: version},
 		screen:  screenList,
 		repos:   initial,
 		marked:  map[string]gh.Repo{},
@@ -600,6 +600,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	case creditsStatusMsg:
+		a.status = msg.text
+		return a, nil
+
 	case releasesStatusMsg:
 		if a.releases != nil {
 			a.releases.status = msg.text
@@ -656,6 +660,10 @@ func (a *App) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.helpScroll -= lh - 2
 		case "pgdown":
 			a.helpScroll += lh - 2
+		default:
+			if cmd := a.openCredit(key.String()); cmd != nil {
+				return a, cmd
+			}
 		}
 		a.helpScroll = max(0, min(a.helpScroll, maxScroll))
 		return a, nil
@@ -1012,9 +1020,9 @@ func (a *App) viewBranches() string {
 func (a *App) listFooter() string {
 	if a.listHelp {
 		if _, maxScroll := a.listHelpLines(a.listHelpHeight()); maxScroll > 0 {
-			return keyHint([2]string{"↑↓", "scroll"}, [2]string{"?", "close"}, [2]string{"^C", "quit"})
+			return keyHint([2]string{"↑↓", "scroll"}, [2]string{"g w s i r", "open link"}, [2]string{"?", "close"}, [2]string{"^C", "quit"})
 		}
-		return keyHint([2]string{"?", "close"}, [2]string{"^C", "quit"})
+		return keyHint([2]string{"g w s i r", "open link"}, [2]string{"?", "close"}, [2]string{"^C", "quit"})
 	}
 	scopeHint := map[searchScope][2]string{
 		scopeMine:    {"tab", "starred"},
@@ -1050,7 +1058,7 @@ func (a *App) listFooter() string {
 // listHelpLines is the overlay's content, and how far it can scroll in a panel
 // of height h.
 func (a *App) listHelpLines(h int) (lines []string, maxScroll int) {
-	lines = strings.Split(strings.TrimRight(listHelpBody()+"\n"+a.rateLimitsBody(), "\n"), "\n")
+	lines = strings.Split(strings.TrimRight(a.meta.creditsBody()+listHelpBody()+"\n"+a.rateLimitsBody(), "\n"), "\n")
 	return lines, max(0, len(lines)-(h-2))
 }
 
@@ -1070,7 +1078,7 @@ func listHelpBody() string {
 		{"ctrl+x", "mark or unmark a repo you own for deletion"},
 		{"ctrl+d", "review and delete every marked repo"},
 		{"", ""},
-		{"?", "this overlay with API rate limits (on an empty search)"},
+		{"?", "this overlay with credits and API rate limits (on an empty search)"},
 		{"ctrl+c", "clear the search, or quit"},
 	})
 }
