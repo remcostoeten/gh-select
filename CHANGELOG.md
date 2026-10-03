@@ -4,6 +4,8 @@ All notable changes to gh-select are documented here.
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-10-03
+
 ### Added
 - **Smarter GitHub search**: accepts `owner/repo`, `owner repo`,
   `owner-repo`, a bare owner or name, and pasted URLs with any scheme,
