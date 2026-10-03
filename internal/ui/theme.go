@@ -150,7 +150,7 @@ var themes = map[string]palette{
 
 var activeTheme = defaultTheme
 
-const defaultTheme = "graphite"
+const defaultTheme = "catppuccin"
 
 // borders maps a selectable name to the chrome's box border style.
 var borders = map[string]lipgloss.Border{
@@ -213,7 +213,7 @@ func cycleTheme() string {
 }
 
 // themeFile is the JSON shape of a custom theme. Colors missing from dark or
-// light fall back to the theme named in extends (graphite when empty).
+// light fall back to the theme named in extends (catppuccin when empty).
 type themeFile struct {
 	Extends string            `json:"extends"`
 	Dark    map[string]string `json:"dark"`

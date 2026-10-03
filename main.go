@@ -523,8 +523,8 @@ Options:
                    of the current directory (or GH_SELECT_DOWNLOAD_DIR)
   -p, --print-path print the selected repo's local path on stdout, cloning it
                    first if needed, for:  cd "$(gh select -p)"
-  --theme NAME     color theme: graphite (default), catppuccin, dracula,
-                   everforest, gruvbox, kanagawa, nord, rose-pine, solarized,
+  --theme NAME     color theme: catppuccin (default), dracula, everforest,
+                   graphite, gruvbox, kanagawa, nord, rose-pine, solarized,
                    tokyonight, or a custom ~/.config/gh-select/themes/NAME.json
                    (or GH_SELECT_THEME); ctrl+t cycles and remembers it
   --border NAME    panel border: none (default), rounded, sharp, double,

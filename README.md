@@ -157,8 +157,8 @@ saved files land.
 
 ### Themes
 
-Built-in themes: `graphite` (default), `catppuccin`, `dracula`,
-`everforest`, `gruvbox`, `kanagawa`, `nord`, `rose-pine`, `solarized` and
+Built-in themes: `catppuccin` (default), `dracula`, `everforest`,
+`graphite`, `gruvbox`, `kanagawa`, `nord`, `rose-pine`, `solarized` and
 `tokyonight`.
 Each has a light and a dark variant, picked from the terminal background.
 Choose one with `--theme NAME` or `GH_SELECT_THEME`, or press `ctrl+t` in the

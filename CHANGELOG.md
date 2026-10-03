@@ -57,9 +57,10 @@ All notable changes to gh-select are documented here.
   refetched once to pick up the new fields.
 - **`shift+tab`** switches scope backwards, and the tabs row shows the
   `tab` key.
-- **New default theme `graphite`**: near-monochrome, with color kept for
-  status (public, private, errors). `tokyonight` is still available with
-  `--theme tokyonight`.
+- **New default theme `catppuccin`**, replacing `tokyonight`, which is still
+  available with `--theme tokyonight`.
+- **New theme `graphite`**: near-monochrome, with color kept for status
+  (public, private, errors).
 - **`ctrl+c` clears before it quits**: with text in a search or filter box
   (repo list, pickers, tree browser, releases, delete confirmation), the
   first `ctrl+c` clears it and the second quits.
