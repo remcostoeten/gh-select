@@ -1,7 +1,11 @@
 package ui
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -81,7 +85,57 @@ var themes = map[string]palette{
 		yellow: ac("#92722a", "#ebcb8b"),
 		red:    ac("#a1333e", "#bf616a"),
 	},
+	"rose-pine": {
+		bg:     ac("#faf4ed", "#191724"),
+		fg:     ac("#575279", "#e0def4"),
+		dim:    ac("#9893a5", "#6e6a86"),
+		hl:     ac("#907aa9", "#c4a7e7"),
+		cyan:   ac("#56949f", "#9ccfd8"),
+		blue:   ac("#286983", "#3e8fb0"),
+		green:  ac("#286983", "#31a8a0"), // rose-pine has no green; a pine tint stands in
+		pink:   ac("#d7827e", "#ebbcba"),
+		yellow: ac("#ea9d34", "#f6c177"),
+		red:    ac("#b4637a", "#eb6f92"),
+	},
+	"kanagawa": {
+		bg:     ac("#f2ecbc", "#1f1f28"),
+		fg:     ac("#545464", "#dcd7ba"),
+		dim:    ac("#8a8980", "#727169"),
+		hl:     ac("#624c83", "#957fb8"),
+		cyan:   ac("#4e8ca2", "#7fb4ca"),
+		blue:   ac("#4d699b", "#7e9cd8"),
+		green:  ac("#6f894e", "#98bb6c"),
+		pink:   ac("#b35b79", "#d27e99"),
+		yellow: ac("#77713f", "#e6c384"),
+		red:    ac("#c84053", "#e46876"),
+	},
+	"everforest": {
+		bg:     ac("#fdf6e3", "#2d353b"),
+		fg:     ac("#5c6a72", "#d3c6aa"),
+		dim:    ac("#939f91", "#859289"),
+		hl:     ac("#df69ba", "#d699b6"),
+		cyan:   ac("#35a77c", "#83c092"),
+		blue:   ac("#3a94c5", "#7fbbb3"),
+		green:  ac("#8da101", "#a7c080"),
+		pink:   ac("#f57d26", "#e69875"), // everforest has no pink; orange is its accent
+		yellow: ac("#dfa000", "#dbbc7f"),
+		red:    ac("#f85552", "#e67e80"),
+	},
+	"solarized": {
+		bg:     ac("#fdf6e3", "#002b36"),
+		fg:     ac("#657b83", "#839496"),
+		dim:    ac("#93a1a1", "#586e75"),
+		hl:     ac("#6c71c4", "#6c71c4"),
+		cyan:   ac("#2aa198", "#2aa198"),
+		blue:   ac("#268bd2", "#268bd2"),
+		green:  ac("#859900", "#859900"),
+		pink:   ac("#d33682", "#d33682"),
+		yellow: ac("#b58900", "#b58900"),
+		red:    ac("#dc322f", "#dc322f"),
+	},
 }
+
+var activeTheme = defaultTheme
 
 const defaultTheme = "tokyonight"
 
@@ -121,8 +175,95 @@ func SetTheme(name string) error {
 	if !ok {
 		return fmt.Errorf("unknown theme %q (valid: %s)", name, strings.Join(ThemeNames(), ", "))
 	}
+	activeTheme = strings.ToLower(name)
 	applyPalette(p)
 	return nil
+}
+
+// CurrentTheme is the name of the active theme.
+func CurrentTheme() string { return activeTheme }
+
+// cycleTheme switches to the theme after the active one, in name order, and
+// returns its name.
+func cycleTheme() string {
+	names := ThemeNames()
+	next := names[0]
+	for i, n := range names {
+		if n == activeTheme {
+			next = names[(i+1)%len(names)]
+			break
+		}
+	}
+	_ = SetTheme(next)
+	return next
+}
+
+// themeFile is the JSON shape of a custom theme. Colors missing from dark or
+// light fall back to the theme named in extends (tokyonight when empty).
+type themeFile struct {
+	Extends string            `json:"extends"`
+	Dark    map[string]string `json:"dark"`
+	Light   map[string]string `json:"light"`
+}
+
+var hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`) // #rrggbb
+
+// LoadCustomThemes registers every <name>.json in dir as a selectable theme,
+// replacing a built-in of the same name. A missing dir is not an error.
+func LoadCustomThemes(dir string) error {
+	paths, err := filepath.Glob(filepath.Join(dir, "*.json"))
+	if err != nil {
+		return err
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		p, err := parseTheme(data)
+		if err != nil {
+			return fmt.Errorf("theme %s: %w", path, err)
+		}
+		themes[strings.ToLower(strings.TrimSuffix(filepath.Base(path), ".json"))] = p
+	}
+	return nil
+}
+
+func parseTheme(data []byte) (palette, error) {
+	var f themeFile
+	if err := json.Unmarshal(data, &f); err != nil {
+		return palette{}, err
+	}
+	base := f.Extends
+	if base == "" {
+		base = defaultTheme
+	}
+	p, ok := themes[strings.ToLower(base)]
+	if !ok {
+		return palette{}, fmt.Errorf("extends unknown theme %q", base)
+	}
+	slots := map[string]*lipgloss.AdaptiveColor{
+		"bg": &p.bg, "fg": &p.fg, "dim": &p.dim, "hl": &p.hl, "cyan": &p.cyan,
+		"blue": &p.blue, "green": &p.green, "pink": &p.pink, "yellow": &p.yellow, "red": &p.red,
+	}
+	for variant, colors := range map[string]map[string]string{"dark": f.Dark, "light": f.Light} {
+		for key, hex := range colors {
+			slot, ok := slots[key]
+			if !ok {
+				return palette{}, fmt.Errorf("%s: unknown color %q (valid: %s)", variant, key, strings.Join(sortedKeys(slots), ", "))
+			}
+			if !hexColor.MatchString(hex) {
+				return palette{}, fmt.Errorf("%s.%s: %q is not a #rrggbb color", variant, key, hex)
+			}
+			if variant == "dark" {
+				slot.Dark = hex
+			} else {
+				slot.Light = hex
+			}
+		}
+	}
+	return p, nil
 }
 
 // SetBorder switches the chrome's box border style. Call before constructing

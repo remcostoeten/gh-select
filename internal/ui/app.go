@@ -127,6 +127,7 @@ type App struct {
 	locals    map[string]string
 	printPath bool // select-and-print mode: enter returns a path, no action menu
 	saveDir   string
+	themeSave func(string) error
 
 	// bulk selection for deletion, keyed by "owner/repo"
 	marked   map[string]gh.Repo
@@ -211,6 +212,24 @@ func (a *App) SetPrintPath(on bool) { a.printPath = on }
 // SetSaveDir sets where files saved from the tree browser land; "" means the
 // current directory.
 func (a *App) SetSaveDir(dir string) { a.saveDir = dir }
+
+// SetThemeSaver sets how a theme picked with ctrl+t is remembered.
+func (a *App) SetThemeSaver(save func(string) error) { a.themeSave = save }
+
+// nextTheme switches to the following theme and re-applies the styles that
+// components copied at construction.
+func (a *App) nextTheme() (tea.Model, tea.Cmd) {
+	name := cycleTheme()
+	a.spinner.Style = statusStyle
+	a.list.Styles.PaginationStyle = dimStyle
+	a.markNote = dimStyle.Render("theme ") + keyStyle.Render(name)
+	if a.themeSave != nil {
+		if err := a.themeSave(name); err != nil {
+			a.markNote += errStyle.Render(" (not saved: " + err.Error() + ")")
+		}
+	}
+	return a, nil
+}
 
 // localPath is the working copy for a repo, or "" when it isn't cloned.
 func (a *App) localPath(nameWithOwner string) string { return a.locals[nameWithOwner] }
@@ -564,6 +583,8 @@ func (a *App) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.sortBy = nextSort(a.sortBy, a.scope)
 		a.applyFilter()
 		return a, nil
+	case "ctrl+t":
+		return a.nextTheme()
 	case "ctrl+x":
 		// ctrl-prefixed, because bare keys are search input on this screen.
 		return a.toggleMark()
@@ -892,6 +913,7 @@ func listHelpBody() string {
 		{"type", "filter the list, or search GitHub"},
 		{"tab", "switch: my repos → starred → GitHub search"},
 		{"ctrl+s", "sort: recent · stars · name"},
+		{"ctrl+t", "next color theme (remembered)"},
 		{"lang:go", "only repos in that language"},
 		{"is:private", "also is:public, is:local (cloned here), is:mine"},
 		{"↑↓ pgup pgdn", "move"},

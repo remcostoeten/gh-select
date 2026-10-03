@@ -30,10 +30,51 @@ func Load() Config {
 		CloneDir:    ExpandHome(os.Getenv("GH_SELECT_CLONE_DIR")),
 		DownloadDir: ExpandHome(os.Getenv("GH_SELECT_DOWNLOAD_DIR")),
 		NoColor:     os.Getenv("NO_COLOR") != "",
-		Theme:       os.Getenv("GH_SELECT_THEME"),
+		Theme:       envOr("GH_SELECT_THEME", savedTheme()),
 		Border:      os.Getenv("GH_SELECT_BORDER"),
 		Transparent: os.Getenv("GH_SELECT_TRANSPARENT") != "",
 	}
+}
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+// ConfigDir resolves $XDG_CONFIG_HOME/gh-select, falling back to ~/.config.
+func ConfigDir() string {
+	base := os.Getenv("XDG_CONFIG_HOME")
+	if base == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		base = filepath.Join(home, ".config")
+	}
+	return filepath.Join(base, "gh-select")
+}
+
+// ThemesDir holds custom theme files, one <name>.json per theme.
+func ThemesDir() string { return filepath.Join(ConfigDir(), "themes") }
+
+func themeStatePath() string { return filepath.Join(ConfigDir(), "theme") }
+
+func savedTheme() string {
+	data, err := os.ReadFile(themeStatePath())
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// SaveTheme remembers the theme picked inside the TUI for later runs.
+func SaveTheme(name string) error {
+	if err := os.MkdirAll(ConfigDir(), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(themeStatePath(), []byte(name+"\n"), 0o644)
 }
 
 // cacheDir resolves $XDG_CACHE_HOME/gh-select, falling back to ~/.cache.

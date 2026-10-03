@@ -142,6 +142,9 @@ func run(opts options) error {
 	if cloneDir == "" {
 		cloneDir = cfg.CloneDir
 	}
+	if err := ui.LoadCustomThemes(config.ThemesDir()); err != nil {
+		return err
+	}
 	if err := ui.SetTheme(theme); err != nil {
 		return err
 	}
@@ -209,6 +212,7 @@ func run(opts options) error {
 	app.SetLocalClones(locals)
 	app.SetPrintPath(opts.printPath)
 	app.SetSaveDir(downloadDir)
+	app.SetThemeSaver(config.SaveTheme)
 	starredCache := c.Named("starred")
 	starred, _ := starredCache.Load()
 	app.SetStarred(starred.Repos, func(repos []gh.Repo) { _ = starredCache.Save(repos) })
@@ -474,7 +478,9 @@ Options:
   -p, --print-path print the selected repo's local path on stdout, cloning it
                    first if needed, for:  cd "$(gh select -p)"
   --theme NAME     color theme: tokyonight (default), catppuccin, dracula,
-                   gruvbox, nord (or GH_SELECT_THEME)
+                   everforest, gruvbox, kanagawa, nord, rose-pine, solarized,
+                   or a custom ~/.config/gh-select/themes/NAME.json
+                   (or GH_SELECT_THEME); ctrl+t cycles and remembers it
   --border NAME    panel border: rounded (default), sharp, double, thick,
                    hidden (or GH_SELECT_BORDER)
   --transparent    keep the terminal's own background instead of the theme's
