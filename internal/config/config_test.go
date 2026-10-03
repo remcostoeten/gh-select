@@ -2,21 +2,19 @@ package config
 
 import "testing"
 
-func TestThemePrecedence(t *testing.T) {
+func TestSavedTheme(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("GH_SELECT_THEME", "")
 
-	if got := Load().Theme; got != "" {
+	if got := Load().SavedTheme; got != "" {
 		t.Errorf("no saved theme: got %q", got)
 	}
 	if err := SaveTheme("nord"); err != nil {
 		t.Fatal(err)
 	}
-	if got := Load().Theme; got != "nord" {
-		t.Errorf("saved theme: got %q, want nord", got)
-	}
 	t.Setenv("GH_SELECT_THEME", "dracula")
-	if got := Load().Theme; got != "dracula" {
-		t.Errorf("env should win over saved theme: got %q", got)
+	cfg := Load()
+	if cfg.SavedTheme != "nord" || cfg.Theme != "dracula" {
+		t.Errorf("got Theme=%q SavedTheme=%q, want dracula and nord", cfg.Theme, cfg.SavedTheme)
 	}
 }

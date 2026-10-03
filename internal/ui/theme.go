@@ -2,6 +2,7 @@ package ui
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -209,39 +210,76 @@ type themeFile struct {
 var hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`) // #rrggbb
 
 // LoadCustomThemes registers every <name>.json in dir as a selectable theme,
-// replacing a built-in of the same name. A missing dir is not an error.
+// replacing a built-in of the same name. A missing dir is not an error. A
+// broken file is skipped and reported while the others still load.
 func LoadCustomThemes(dir string) error {
 	paths, err := filepath.Glob(filepath.Join(dir, "*.json"))
 	if err != nil {
 		return err
 	}
-	sort.Strings(paths)
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		p, err := parseTheme(data)
-		if err != nil {
-			return fmt.Errorf("theme %s: %w", path, err)
-		}
-		themes[strings.ToLower(strings.TrimSuffix(filepath.Base(path), ".json"))] = p
+	type pendingTheme struct {
+		path string
+		file themeFile
 	}
-	return nil
+	pending := map[string]pendingTheme{}
+	var errs []error
+	for _, path := range paths {
+		f, err := readThemeFile(path)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("themes/%s: %w", filepath.Base(path), err))
+			continue
+		}
+		pending[strings.ToLower(strings.TrimSuffix(filepath.Base(path), ".json"))] = pendingTheme{path, f}
+	}
+	// Resolve in passes so a theme can extend another custom theme in any file order.
+	for len(pending) > 0 {
+		progressed := false
+		for _, name := range sortedKeys(pending) {
+			t := pending[name]
+			if base := t.file.base(); base != name {
+				if _, waiting := pending[base]; waiting {
+					continue
+				}
+			}
+			delete(pending, name)
+			progressed = true
+			p, err := t.file.palette()
+			if err != nil {
+				errs = append(errs, fmt.Errorf("themes/%s: %w", filepath.Base(t.path), err))
+				continue
+			}
+			themes[name] = p
+		}
+		if !progressed {
+			for _, name := range sortedKeys(pending) {
+				errs = append(errs, fmt.Errorf("themes/%s: extends %q in a loop", filepath.Base(pending[name].path), pending[name].file.base()))
+			}
+			break
+		}
+	}
+	return errors.Join(errs...)
 }
 
-func parseTheme(data []byte) (palette, error) {
+func readThemeFile(path string) (themeFile, error) {
 	var f themeFile
-	if err := json.Unmarshal(data, &f); err != nil {
-		return palette{}, err
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return f, err
 	}
-	base := f.Extends
-	if base == "" {
-		base = defaultTheme
+	return f, json.Unmarshal(data, &f)
+}
+
+func (f themeFile) base() string {
+	if f.Extends == "" {
+		return defaultTheme
 	}
-	p, ok := themes[strings.ToLower(base)]
+	return strings.ToLower(f.Extends)
+}
+
+func (f themeFile) palette() (palette, error) {
+	p, ok := themes[f.base()]
 	if !ok {
-		return palette{}, fmt.Errorf("extends unknown theme %q", base)
+		return palette{}, fmt.Errorf("extends unknown theme %q", f.Extends)
 	}
 	slots := map[string]*lipgloss.AdaptiveColor{
 		"bg": &p.bg, "fg": &p.fg, "dim": &p.dim, "hl": &p.hl, "cyan": &p.cyan,

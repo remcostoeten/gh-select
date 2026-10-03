@@ -213,6 +213,10 @@ func (a *App) SetPrintPath(on bool) { a.printPath = on }
 // current directory.
 func (a *App) SetSaveDir(dir string) { a.saveDir = dir }
 
+// SetNote shows a startup warning in the status line, where it stays visible
+// once the TUI takes over the screen.
+func (a *App) SetNote(note string) { a.markNote = errStyle.Render(note) }
+
 // SetThemeSaver sets how a theme picked with ctrl+t is remembered.
 func (a *App) SetThemeSaver(save func(string) error) { a.themeSave = save }
 

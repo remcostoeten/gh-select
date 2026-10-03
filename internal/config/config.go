@@ -16,7 +16,8 @@ type Config struct {
 	CloneDir    string        // where clones land (empty = current directory)
 	DownloadDir string        // where release assets land (empty = current directory)
 	NoColor     bool          // disable ANSI styling
-	Theme       string        // UI color theme name (empty = default)
+	Theme       string        // UI color theme name from GH_SELECT_THEME (empty = unset)
+	SavedTheme  string        // theme last picked with ctrl+t (empty = none)
 	Border      string        // panel border style name (empty = default)
 	Transparent bool          // don't paint the app background
 }
@@ -30,17 +31,11 @@ func Load() Config {
 		CloneDir:    ExpandHome(os.Getenv("GH_SELECT_CLONE_DIR")),
 		DownloadDir: ExpandHome(os.Getenv("GH_SELECT_DOWNLOAD_DIR")),
 		NoColor:     os.Getenv("NO_COLOR") != "",
-		Theme:       envOr("GH_SELECT_THEME", savedTheme()),
+		Theme:       os.Getenv("GH_SELECT_THEME"),
+		SavedTheme:  savedTheme(),
 		Border:      os.Getenv("GH_SELECT_BORDER"),
 		Transparent: os.Getenv("GH_SELECT_TRANSPARENT") != "",
 	}
-}
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }
 
 // ConfigDir resolves $XDG_CONFIG_HOME/gh-select, falling back to ~/.config.

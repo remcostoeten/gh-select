@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -142,11 +143,20 @@ func run(opts options) error {
 	if cloneDir == "" {
 		cloneDir = cfg.CloneDir
 	}
+	var notes []string
 	if err := ui.LoadCustomThemes(config.ThemesDir()); err != nil {
-		return err
+		notes = append(notes, strings.ReplaceAll(err.Error(), "\n", " · "))
+	}
+	pinnedTheme := theme != ""
+	if !pinnedTheme {
+		theme = cfg.SavedTheme
 	}
 	if err := ui.SetTheme(theme); err != nil {
-		return err
+		if pinnedTheme {
+			return err
+		}
+		notes = append(notes, "saved theme ignored: "+err.Error())
+		_ = ui.SetTheme("")
 	}
 	if err := ui.SetBorder(border); err != nil {
 		return err
@@ -212,7 +222,14 @@ func run(opts options) error {
 	app.SetLocalClones(locals)
 	app.SetPrintPath(opts.printPath)
 	app.SetSaveDir(downloadDir)
-	app.SetThemeSaver(config.SaveTheme)
+	if pinnedTheme {
+		app.SetThemeSaver(func(string) error { return errors.New("--theme or GH_SELECT_THEME is set") })
+	} else {
+		app.SetThemeSaver(config.SaveTheme)
+	}
+	if len(notes) > 0 {
+		app.SetNote(strings.Join(notes, " · "))
+	}
 	starredCache := c.Named("starred")
 	starred, _ := starredCache.Load()
 	app.SetStarred(starred.Repos, func(repos []gh.Repo) { _ = starredCache.Save(repos) })
