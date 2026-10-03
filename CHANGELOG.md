@@ -16,6 +16,17 @@ All notable changes to gh-select are documented here.
   overlay show usage for the search, core, graphql and code search budgets,
   a bar marking how far each window has run, the reset countdown and, when
   the current pace would empty a bucket before it resets, how soon.
+- **All languages in the details block**: the Language row lists every
+  language GitHub detects, largest first, fetched when the cursor rests on a
+  repo and cut to `+N` when the terminal is too narrow.
+- **Finds clones anywhere in your home directory**, not only under the
+  clone root. The scan runs in the background, skips dependency, cache and
+  tool folders, stops at a fixed number of directories and is cached for
+  the next start. When a repo is cloned twice, the most recently used copy
+  wins. `GH_SELECT_SCAN_DIRS` adds directories to search first, with the
+  clone root, current directory and home as the fallback. Git worktrees and
+  submodules are recognised too.
+- **Short repo names**: the details block drops your own username.
 - **More themes**: `everforest`, `kanagawa`, `rose-pine` and `solarized`.
 - **Custom themes** from `~/.config/gh-select/themes/NAME.json`, inheriting
   unset colors from the theme named in `extends`.
@@ -23,9 +34,37 @@ All notable changes to gh-select are documented here.
   `~/.config/gh-select/theme`.
 
 ### Changed
+- **Footer**: every screen ends with a dim line showing the version, build
+  commit and its date on the left, and the author and source on the right.
+  The version moved there from the header.
+- **Frameless layout**: panels drop their boxes for a title row, the search
+  field sits on a hairline rule, side panels are split by a single line and
+  the highlighted row gets a full-width tinted bar. `--border rounded` brings
+  the boxes back.
+- **Repo list redesign**: scope tabs with the active one as a filled pill,
+  aligned name, tag, language and star columns under a header row, and
+  a details block under the list with right-aligned labels and the repo's
+  URL and local path.
+- **Icons**: private repos, forks, local clones and star counts use Nerd
+  Font icons in the list and details, so the list header keeps only Name and
+  Language. `--icons none` (or `GH_SELECT_ICONS=none`)
+  falls back to text tags.
+- **Forks** are tagged in the list, the details show what they were
+  forked from, and `is:fork` or `is:source` filters them. The repo cache is
+  refetched once to pick up the new fields.
+- **`shift+tab`** switches scope backwards, and the tabs row shows the
+  `tab` key.
+- **New default theme `graphite`**: near-monochrome, with color kept for
+  status (public, private, errors). `tokyonight` is still available with
+  `--theme tokyonight`.
 - **`ctrl+c` clears before it quits**: with text in a search or filter box
   (repo list, pickers, tree browser, releases, delete confirmation), the
   first `ctrl+c` clears it and the second quits.
+
+### Fixed
+- **Backspace goes back** from the action menu to the repo list, and from
+  the branch picker once its filter is empty, like it already did from the
+  README, tree and releases screens.
 
 ## [2.4.0] - 2026-09-30
 

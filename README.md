@@ -69,7 +69,7 @@ gh select
 1. **Find a repo** — type to fuzzy-filter your repositories. The list loads
    instantly from cache and refreshes in the background.
    - `tab` switches between your repos, your **starred** repos and a search
-     of all of GitHub
+     of all of GitHub, shown as tabs above the search; `shift+tab` goes back
    - GitHub search takes a name, an owner, `owner/repo`, `owner repo`,
      `owner-repo` or a pasted URL, SSH remote or `git clone` command. A
      partial owner like `heygen liveav` still finds `heygen-com/liveavatar-*`.
@@ -77,7 +77,9 @@ gh select
    - `ctrl+s` sorts by recent, stars or name
    - `ctrl+t` cycles color themes and remembers the last one
    - filter with tokens in the search: `lang:go`, `is:private`, `is:public`,
-     `is:local` (cloned on this machine) and `is:mine`, e.g.
+     `is:fork`, `is:source`, `is:local` (cloned anywhere under your home
+     directory, the clone root or the current directory) and
+     `is:mine`, e.g.
      `cli lang:go is:mine`
    - `?` on an empty search shows every key and your live GitHub API rate
      limits: usage per bucket, how far each window has run, and when the
@@ -147,19 +149,26 @@ gh select doctor             # check tools + authentication
 
 Environment: `GH_SELECT_CACHE_TTL` (seconds) controls cache freshness
 (default 1800); `GH_SELECT_CLONE_DIR` sets the clone root;
+`GH_SELECT_SCAN_DIRS` adds directories to search for existing clones,
+separated like `PATH` (the clone root, current directory and home are still
+searched after them);
 `GH_SELECT_DOWNLOAD_DIR` (or `--download-dir`) sets where release assets and
 saved files land.
 
 ### Themes
 
-Built-in themes: `tokyonight` (default), `catppuccin`, `dracula`,
-`everforest`, `gruvbox`, `kanagawa`, `nord`, `rose-pine` and `solarized`.
+Built-in themes: `graphite` (default), `catppuccin`, `dracula`,
+`everforest`, `gruvbox`, `kanagawa`, `nord`, `rose-pine`, `solarized` and
+`tokyonight`.
 Each has a light and a dark variant, picked from the terminal background.
 Choose one with `--theme NAME` or `GH_SELECT_THEME`, or press `ctrl+t` in the
 repo list. The theme picked with `ctrl+t` is saved to
 `~/.config/gh-select/theme` and used when neither the flag nor the variable
-is set. `--border` picks `rounded`, `sharp`, `double`, `thick` or `hidden`,
-and `--transparent` keeps the terminal's own background.
+is set. Panels are frameless by default; `--border` boxes them in
+`rounded`, `sharp`, `double`, `thick` or `hidden`, and `--transparent`
+keeps the terminal's own background. Private repos, forks and local clones
+are tagged with [Nerd Font](https://www.nerdfonts.com) icons; without one,
+`--icons none` or `GH_SELECT_ICONS=none` shows them as words.
 
 A custom theme is a JSON file in `~/.config/gh-select/themes/`, named after
 the theme. Colors left out come from the theme in `extends`:
