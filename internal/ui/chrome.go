@@ -8,12 +8,13 @@ import (
 )
 
 // Slim persistent chrome: a one-line header (app name + screen context), a
-// blank breathing row, a one-line status row, and a one-line key-hint footer.
+// blank breathing row, a one-line status row, and a two-line footer (key hints
+// over a dim build and source line).
 // The body is built from titled panels, frameless by default or boxed via
 // SetBorder, with the focused panel's title highlighted. The whole layout is
 // centered and capped at maxContentWidth so it doesn't stretch thin across
 // very wide terminals.
-const chromeLines = 4 // header (1) + blank (1) + status line (1) + footer (1)
+const chromeLines = 5 // header (1) + blank (1) + status line (1) + footer (2)
 
 // maxContentWidth caps how wide the layout grows; anything wider is margin.
 const maxContentWidth = 118
@@ -235,24 +236,27 @@ func truncate(s string, w int) string {
 	return ansi.Truncate(s, w, "…")
 }
 
-// headerLine lays the app identity on the left and screen context on the right,
+// headerLine lays the app name on the left and screen context on the right,
 // justified to fill innerWidth cells.
-func headerLine(version, context string, innerWidth int) string {
-	left := appStyle.Render("gh-select") + " " + dimStyle.Render(version)
-	right := contextStyle.Render(context)
-	gap := innerWidth - lipgloss.Width(left) - lipgloss.Width(right)
+func headerLine(context string, innerWidth int) string {
+	return justify(appStyle.Render("gh-select"), contextStyle.Render(context), innerWidth)
+}
+
+// justify places left and right at either end of w cells; when both don't
+// fit they're joined by a space and left for truncate() to trim.
+func justify(left, right string, w int) string {
+	gap := w - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
-		// Too narrow for both — keep the app name; truncate() trims the rest.
 		return left + " " + right
 	}
 	return left + strings.Repeat(" ", gap) + right
 }
 
 // compose stacks the slim header, a breathing row, a body padded to exactly
-// innerHeight rows, the status line, and the key-hint footer — the footer is
-// always pinned to the bottom of the screen with status visible above it, and
-// the whole column is centered within the terminal.
-func compose(width, height int, version, context, body, status, keys string) string {
+// innerHeight rows, the status line, the key hints and the meta line, so the
+// footer is always pinned to the bottom of the screen with status visible
+// above it, and the whole column is centered within the terminal.
+func compose(width, height int, meta footerMeta, context, body, status, keys string) string {
 	cw := contentWidth(width)
 	innerH := height - chromeLines
 	if innerH < 1 {
@@ -263,10 +267,11 @@ func compose(width, height int, version, context, body, status, keys string) str
 	if status != "" {
 		statusLine = edge + truncate(status, cw-4)
 	}
-	out := edge + headerLine(version, context, cw-4) + "\n\n" +
+	out := edge + truncate(headerLine(context, cw-4), cw-4) + "\n\n" +
 		fitHeight(body, innerH) + "\n" +
 		statusLine + "\n" +
-		edge + fitHints(keys, cw-4)
+		edge + fitHints(keys, cw-4) + "\n" +
+		edge + meta.line(cw-4)
 	return indent(out, contentPad(width))
 }
 

@@ -99,9 +99,9 @@ type branchesLoadedMsg struct {
 
 // App is the root Bubble Tea model coordinating the screens.
 type App struct {
-	client  *gh.Client
-	saveFn  func([]gh.Repo) // persist freshly fetched repos to cache
-	version string          // shown in the header chrome
+	client *gh.Client
+	saveFn func([]gh.Repo) // persist freshly fetched repos to cache
+	meta   footerMeta      // build and source line pinned under the key hints
 
 	screen   screen
 	list     list.Model
@@ -183,7 +183,7 @@ func NewApp(client *gh.Client, initial []gh.Repo, refresh bool, saveFn func([]gh
 	a := &App{
 		client:  client,
 		saveFn:  saveFn,
-		version: version,
+		meta:    footerMeta{version: version},
 		screen:  screenList,
 		repos:   initial,
 		marked:  map[string]gh.Repo{},
@@ -833,23 +833,23 @@ func (a *App) view() string {
 		if a.status != "" {
 			status = statusStyle.Render(a.status)
 		}
-		return compose(a.width, a.height, a.version,
+		return compose(a.width, a.height, a.meta,
 			a.selected.NameWithOwner, a.viewActions(), status, a.actionsFooter())
 	case screenBranches:
 		return a.viewBranches()
 	case screenTree:
 		context, body, status, keys := a.tree.chromeParts(a.spinner.View(), a.height-chromeLines)
-		return compose(a.width, a.height, a.version, context, body, status, keys)
+		return compose(a.width, a.height, a.meta, context, body, status, keys)
 	case screenReadme:
 		context, body, status, keys := a.readme.chromeParts(a.spinner.View(), a.width, a.height-chromeLines)
-		return compose(a.width, a.height, a.version, context, body, status, keys)
+		return compose(a.width, a.height, a.meta, context, body, status, keys)
 	case screenConfirmDelete:
 		return a.viewConfirmDelete()
 	case screenReleases:
 		context, body, status, keys := a.releases.chromeParts(a.spinner.View(), a.height-chromeLines)
-		return compose(a.width, a.height, a.version, context, body, status, keys)
+		return compose(a.width, a.height, a.meta, context, body, status, keys)
 	default:
-		return compose(a.width, a.height, a.version,
+		return compose(a.width, a.height, a.meta,
 			"", a.viewList(), a.listStatus(), a.listFooter())
 	}
 }
@@ -997,7 +997,7 @@ func (a *App) viewBranches() string {
 	context := a.selected.NameWithOwner
 	if a.branchLoading || a.picker == nil {
 		status := a.spinner.View() + statusStyle.Render(" Loading branches…")
-		return compose(a.width, a.height, a.version, context, "", status, pickerFooter())
+		return compose(a.width, a.height, a.meta, context, "", status, pickerFooter())
 	}
 	cw := contentWidth(a.width)
 	search := searchPanel("search", searchField(a.picker.query, "filter branches…"), cw, true)
@@ -1006,7 +1006,7 @@ func (a *App) viewBranches() string {
 	if _, sw := splitWidths(cw); sw > 0 {
 		branches = hsplit(branches, detailColumn(a.selected, a.localPath(a.selected.NameWithOwner), sw, lh))
 	}
-	return compose(a.width, a.height, a.version, context, search+"\n"+branches, "", pickerFooter())
+	return compose(a.width, a.height, a.meta, context, search+"\n"+branches, "", pickerFooter())
 }
 
 func (a *App) listFooter() string {

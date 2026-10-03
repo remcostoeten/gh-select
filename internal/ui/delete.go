@@ -174,7 +174,7 @@ func (a *App) viewConfirmDelete() string {
 		status = errStyle.Render(c.status)
 	}
 	body := panel("confirm deletion", b.String(), cw, h, true)
-	return compose(a.width, a.height, a.version, "delete", body, status, keyHint(
+	return compose(a.width, a.height, a.meta, "delete", body, status, keyHint(
 		[2]string{"type", "confirmation"},
 		[2]string{"enter", "delete"},
 		[2]string{"esc", "cancel"},

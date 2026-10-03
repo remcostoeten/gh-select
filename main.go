@@ -28,6 +28,30 @@ import (
 // version is overridden at build time via -ldflags "-X main.version=...".
 var version = "dev"
 
+// vcsInfo is the commit the Go toolchain embedded at build time, shortened,
+// whether the tree was dirty, and the commit time. Empty when built outside a
+// git checkout.
+func vcsInfo() (rev string, dirty bool, at time.Time) {
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "", false, time.Time{}
+	}
+	for _, s := range bi.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			rev = s.Value
+		case "vcs.modified":
+			dirty = s.Value == "true"
+		case "vcs.time":
+			at, _ = time.Parse(time.RFC3339, s.Value)
+		}
+	}
+	if len(rev) > 7 {
+		rev = rev[:7]
+	}
+	return rev, dirty, at
+}
+
 // resolveVersion prefers the linker-injected version (set in release builds),
 // falling back to the VCS commit embedded by the Go toolchain for local builds,
 // e.g. "dev+270fe07-dirty".
@@ -35,25 +59,9 @@ func resolveVersion() string {
 	if version != "dev" {
 		return version
 	}
-	bi, ok := debug.ReadBuildInfo()
-	if !ok {
-		return version
-	}
-	var rev string
-	var dirty bool
-	for _, s := range bi.Settings {
-		switch s.Key {
-		case "vcs.revision":
-			rev = s.Value
-		case "vcs.modified":
-			dirty = s.Value == "true"
-		}
-	}
+	rev, dirty, _ := vcsInfo()
 	if rev == "" {
 		return version
-	}
-	if len(rev) > 7 {
-		rev = rev[:7]
 	}
 	v := "dev+" + rev
 	if dirty {
@@ -230,6 +238,8 @@ func run(opts options) error {
 	localsFile := filepath.Join(cfg.CacheDir, "locals.json")
 	locals, localsSaved := local.Load(localsFile)
 	app := ui.NewApp(client, initial, needRefresh, saveFn, resolveVersion())
+	rev, _, updated := vcsInfo()
+	app.SetBuild(rev, updated)
 	if localsSaved {
 		app.SetLocalClones(locals)
 	}

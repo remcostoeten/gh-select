@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/remcostoeten/gh-select/internal/gh"
 )
 
@@ -35,5 +36,26 @@ func TestListHelpScrollsOnShortTerminal(t *testing.T) {
 	a = send(t, a, key("?"))
 	if a.helpScroll != 0 || !a.listHelp {
 		t.Fatal("reopening the overlay did not reset the scroll")
+	}
+}
+
+func TestFooterShowsBuildAndSource(t *testing.T) {
+	a := NewApp(nil, sampleRepos, false, nil, "v1.2.0")
+	a.SetBuild("270fe07", time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC))
+	a = send(t, a, tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	v := a.View()
+	for _, want := range []string{"v1.2.0", "270fe07", "updated 3 Oct 2026", "Remco Stoeten", "github.com/remcostoeten/gh-select"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("footer is missing %q", want)
+		}
+	}
+	if got := lipgloss.Height(v); got != 30 {
+		t.Errorf("view is %d rows, want 30", got)
+	}
+
+	a = send(t, a, tea.WindowSizeMsg{Width: 60, Height: 30})
+	if v := a.View(); !strings.Contains(v, "v1.2.0") || strings.Contains(v, "Remco Stoeten") {
+		t.Error("narrow footer should keep the version and drop the author")
 	}
 }
