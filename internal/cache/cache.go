@@ -19,15 +19,19 @@ type Cache struct {
 	ttl  time.Duration
 }
 
+// schema versions the cache files, so a release that adds repo fields
+// refetches once instead of trusting a fresh cache that lacks them.
+const schema = "-v2"
+
 // New returns a Cache rooted at dir with the given freshness window.
 func New(dir string, ttl time.Duration) *Cache {
-	return &Cache{dir: dir, file: filepath.Join(dir, "repos.json"), ttl: ttl}
+	return &Cache{dir: dir, file: filepath.Join(dir, "repos"+schema+".json"), ttl: ttl}
 }
 
 // Named returns a Cache sharing c's directory and freshness window but stored
 // in its own file, e.g. Named("starred") for the starred list.
 func (c *Cache) Named(name string) *Cache {
-	return &Cache{dir: c.dir, file: filepath.Join(c.dir, name+".json"), ttl: c.ttl}
+	return &Cache{dir: c.dir, file: filepath.Join(c.dir, name+schema+".json"), ttl: c.ttl}
 }
 
 // Entry is the cached payload plus the age of the data on disk.

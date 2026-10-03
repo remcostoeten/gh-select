@@ -275,7 +275,12 @@ func (r *releasesModel) update(msg tea.Msg) (tea.Cmd, releasesOutcome) {
 		return nil, releasesContinue
 	}
 	if key.String() == "ctrl+c" {
-		return nil, releasesQuit
+		if r.filter == "" || r.level == levelReader {
+			return nil, releasesQuit
+		}
+		r.filter = ""
+		r.cursor, r.assetCursor = 0, 0
+		return nil, releasesContinue
 	}
 	r.status = ""
 	if r.filtering {
@@ -545,7 +550,7 @@ func (r *releasesModel) withFilter(body string, cw int) string {
 	if r.filtering || r.filter != "" {
 		field = searchField(r.filter, placeholder)
 	}
-	return panel("filter", field, cw, searchBoxLines, r.filtering) + "\n" + body
+	return searchPanel("filter", field, cw, r.filtering) + "\n" + body
 }
 
 func (r *releasesModel) footer(normal string) string {
@@ -566,9 +571,9 @@ func (r *releasesModel) releasesBody(cw, h int) string {
 	}
 	for pos := start; pos < end; pos++ {
 		rel := r.releases[rows[pos]]
-		pointer, tag := "  ", keyStyle.Render(rel.TagName)
+		pointer, tag := "", keyStyle.Render(rel.TagName)
 		if pos == r.cursor {
-			pointer, tag = selectedStyle.Render("❯ "), selectedStyle.Render(rel.TagName)
+			pointer, tag = selectRow(""), selectedStyle.Render(rel.TagName)
 		}
 		line := pointer + tag + strings.Repeat(" ", tagW-lipgloss.Width(rel.TagName)) + "  " +
 			dimStyle.Render(rel.Date().Format("2006-01-02"))
@@ -611,11 +616,11 @@ func (r *releasesModel) assetsBody(rel gh.Release, cw, h int) string {
 	for pos := start; pos < end; pos++ {
 		i := rows[pos]
 		a := r.assets[i]
-		pointer := "  "
+		pointer := ""
 		name := truncate(a.Name, nameW)
 		pad := strings.Repeat(" ", nameW-lipgloss.Width(name))
 		if pos == r.assetCursor {
-			pointer, name = selectedStyle.Render("❯ "), selectedStyle.Render(name)
+			pointer, name = selectRow(""), selectedStyle.Render(name)
 		} else {
 			name = lipgloss.NewStyle().Foreground(colFg).Render(name)
 		}

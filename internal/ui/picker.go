@@ -61,6 +61,11 @@ const (
 func (p *pickerModel) handleKey(keyStr string, runes []rune, isRunes bool) pickerOutcome {
 	switch keyStr {
 	case "ctrl+c":
+		if p.query != "" {
+			p.query = ""
+			p.cursor = 0
+			return pickerContinue
+		}
 		return pickerQuit
 	case "esc":
 		if p.query != "" {
@@ -85,11 +90,12 @@ func (p *pickerModel) handleKey(keyStr string, runes []rune, isRunes bool) picke
 		}
 		return pickerContinue
 	case "backspace":
-		if p.query != "" {
-			r := []rune(p.query)
-			p.query = string(r[:len(r)-1])
-			p.cursor = 0
+		if p.query == "" {
+			return pickerBack
 		}
+		r := []rune(p.query)
+		p.query = string(r[:len(r)-1])
+		p.cursor = 0
 		return pickerContinue
 	}
 	if isRunes {
@@ -137,10 +143,10 @@ func (p *pickerModel) body(innerH int) string {
 
 	var b strings.Builder
 	for i := start; i < end; i++ {
-		pointer := "  "
+		pointer := ""
 		name := rows[i]
 		if i == p.cursor {
-			pointer = selectedStyle.Render(" ❯")
+			pointer = selectRow("")
 			name = selectedStyle.Render(name)
 		} else {
 			name = keyStyle.Render(name)
@@ -148,7 +154,7 @@ func (p *pickerModel) body(innerH int) string {
 		if p.tags[rows[i]] {
 			name += dimStyle.Render("  tag")
 		}
-		fmt.Fprintf(&b, "%s %s\n", pointer, name)
+		fmt.Fprintf(&b, "%s%s\n", pointer, name)
 	}
 	return b.String()
 }

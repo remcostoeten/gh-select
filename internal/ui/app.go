@@ -4,11 +4,13 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/remcostoeten/gh-select/internal/gh"
 )
 
@@ -97,9 +99,9 @@ type branchesLoadedMsg struct {
 
 // App is the root Bubble Tea model coordinating the screens.
 type App struct {
-	client  *gh.Client
-	saveFn  func([]gh.Repo) // persist freshly fetched repos to cache
-	version string          // shown in the header chrome
+	client *gh.Client
+	saveFn func([]gh.Repo) // persist freshly fetched repos to cache
+	meta   buildMeta       // version, author, source and build shown in the header
 
 	screen   screen
 	list     list.Model
@@ -123,16 +125,26 @@ type App struct {
 	actionCursor int
 	actions      []actionItem // rebuilt per repo: local clones get extra entries
 
-	// local clones, keyed by "owner/repo"; empty when no clone dir is set
-	locals    map[string]string
-	printPath bool // select-and-print mode: enter returns a path, no action menu
-	saveDir   string
+	// local clones, keyed by "owner/repo"; localsKnown is false until a saved
+	// or fresh scan has filled them in
+	locals      map[string]string
+	localsKnown bool
+	localScan   func() map[string]string
+	printPath   bool // select-and-print mode: enter returns a path, no action menu
+	saveDir     string
+	themeSave   func(string) error
 
 	// bulk selection for deletion, keyed by "owner/repo"
 	marked   map[string]gh.Repo
 	markNote string
 
-	listHelp bool
+	// every language per repo, fetched once the cursor rests on it
+	langs     map[string][]string
+	langsWant string
+
+	listHelp   bool
+	helpScroll int
+	rate       rateLimits
 
 	// retype-to-confirm delete screen; confirmReturn is the screen esc goes back to
 	confirm       *confirmModel
@@ -171,7 +183,7 @@ func NewApp(client *gh.Client, initial []gh.Repo, refresh bool, saveFn func([]gh
 	a := &App{
 		client:  client,
 		saveFn:  saveFn,
-		version: version,
+		meta:    buildMeta{version: version},
 		screen:  screenList,
 		repos:   initial,
 		marked:  map[string]gh.Repo{},
@@ -188,19 +200,48 @@ func NewApp(client *gh.Client, initial []gh.Repo, refresh bool, saveFn func([]gh
 
 // refreshDelegate rebuilds the row renderer so it sees the current scope and
 // the live locals/marked maps.
-func (a *App) refreshDelegate() {
-	a.list.SetDelegate(compactDelegate{
-		bare:   a.scope == scopeMine,
-		locals: a.locals,
-		marked: a.marked,
-	})
+func (a *App) refreshDelegate() { a.list.SetDelegate(a.delegate()) }
+
+func (a *App) delegate() compactDelegate {
+	return compactDelegate{bare: a.scope == scopeMine, locals: a.locals, marked: a.marked}
 }
 
 // SetLocalClones tells the UI which repos already exist on disk, keyed by
 // "owner/repo", so they can be badged and offered "open" over "clone".
 func (a *App) SetLocalClones(locals map[string]string) {
 	a.locals = locals
+	a.localsKnown = true
 	a.refreshDelegate()
+}
+
+// SetLocalScan sets the disk scan run in the background at startup, whose
+// result replaces the clones passed to SetLocalClones.
+func (a *App) SetLocalScan(scan func() map[string]string) { a.localScan = scan }
+
+// LocalClones is the latest known set of clones, for actions run after exit.
+func (a *App) LocalClones() map[string]string { return a.locals }
+
+type localsScannedMsg struct{ locals map[string]string }
+
+func (a *App) scanLocalsCmd() tea.Cmd {
+	if a.localScan == nil {
+		return nil
+	}
+	scan := a.localScan
+	return func() tea.Msg { return localsScannedMsg{locals: scan()} }
+}
+
+// localsScanned swaps in a fresh scan, keeping the cursor on the same repo.
+func (a *App) localsScanned(locals map[string]string) {
+	current := a.highlighted()
+	a.SetLocalClones(locals)
+	a.applyFilter()
+	for i, it := range a.list.Items() {
+		if r, ok := it.(repoItem); ok && r.repo.NameWithOwner == current {
+			a.list.Select(i)
+			return
+		}
+	}
 }
 
 // SetPrintPath switches the app into select-and-print mode, where choosing a
@@ -211,12 +252,56 @@ func (a *App) SetPrintPath(on bool) { a.printPath = on }
 // current directory.
 func (a *App) SetSaveDir(dir string) { a.saveDir = dir }
 
+// SetNote shows a startup warning in the status line, where it stays visible
+// once the TUI takes over the screen.
+func (a *App) SetNote(note string) { a.markNote = errStyle.Render(note) }
+
+// SetThemeSaver sets how a theme picked with ctrl+t is remembered.
+func (a *App) SetThemeSaver(save func(string) error) { a.themeSave = save }
+
+// nextTheme switches to the following theme and re-applies the styles that
+// components copied at construction.
+func (a *App) nextTheme() (tea.Model, tea.Cmd) {
+	name := cycleTheme()
+	a.spinner.Style = statusStyle
+	a.list.Styles.PaginationStyle = dimStyle
+	a.markNote = dimStyle.Render("theme ") + keyStyle.Render(name)
+	if a.themeSave != nil {
+		if err := a.themeSave(name); err != nil {
+			a.markNote += errStyle.Render(" (not saved: " + err.Error() + ")")
+		}
+	}
+	return a, nil
+}
+
 // localPath is the working copy for a repo, or "" when it isn't cloned.
 func (a *App) localPath(nameWithOwner string) string { return a.locals[nameWithOwner] }
 
-// listPanelSize is the outer size of the repo list panel: the content column
-// minus the details column, and the body height minus the search panel.
+// listTopLines is the scope tabs row, a blank row and the search panel.
+const listTopLines = 2 + searchBoxLines
+
+// listPanelSize is the outer size of the repo list panel: the full content
+// column, and the body height minus the tabs, search and details block.
 func (a *App) listPanelSize() (w, h int) {
+	return contentWidth(a.width), a.listHelpHeight() - a.detailLines()
+}
+
+// listHelpHeight is the room below the search panel, which the help overlay
+// takes over whole.
+func (a *App) listHelpHeight() int { return a.height - chromeLines - listTopLines }
+
+// detailLines is the height of the details block under the list, or 0 when
+// the terminal is too short to spare it.
+func (a *App) detailLines() int {
+	if a.listHelpHeight()-repoDetailLines < 8 {
+		return 0
+	}
+	return repoDetailLines
+}
+
+// pickerPanelSize is the outer size of the branch list: the content column
+// minus the details column, and the body height minus the search panel.
+func (a *App) pickerPanelSize() (w, h int) {
 	main, _ := splitWidths(contentWidth(a.width))
 	return main, a.height - chromeLines - searchBoxLines
 }
@@ -300,6 +385,9 @@ func (a *App) setScope(next searchScope) (tea.Model, tea.Cmd) {
 // instant local fuzzy filtering, or a debounced GitHub search.
 func (a *App) editQuery(next string) (tea.Model, tea.Cmd) {
 	a.query = next
+	if a.scope != scopeGitHub && gh.IsRepoURL(next) {
+		return a.setScope(scopeGitHub)
+	}
 	if a.scope != scopeGitHub {
 		a.applyFilter()
 		return a, nil
@@ -315,9 +403,9 @@ func (a *App) editQuery(next string) (tea.Model, tea.Cmd) {
 
 func (a *App) Init() tea.Cmd {
 	if a.loading {
-		return tea.Batch(a.fetchCmd(), a.spinner.Tick)
+		return tea.Batch(a.fetchCmd(), a.spinner.Tick, a.scanLocalsCmd())
 	}
-	return nil
+	return a.scanLocalsCmd()
 }
 
 // anyLoading reports whether any screen is awaiting a network fetch (used to
@@ -384,7 +472,25 @@ func (a *App) fetchCmd() tea.Cmd {
 }
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	m, cmd := a.update(msg)
+	if a.screen == screenList && a.detailLines() > 0 {
+		cmd = tea.Batch(cmd, a.langsCmd())
+	}
+	return m, cmd
+}
+
+func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case langsDueMsg, langsLoadedMsg:
+		return a, a.updateLangs(msg)
+
+	case localsScannedMsg:
+		a.localsScanned(msg.locals)
+		return a, nil
+
+	case rateLimitsMsg, rateTickMsg:
+		return a, a.updateRate(msg)
+
 	case spinner.TickMsg:
 		if !a.anyLoading() {
 			return a, nil // let the spinner stop once nothing is loading
@@ -494,6 +600,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	case creditsStatusMsg:
+		a.status = msg.text
+		return a, nil
+
 	case releasesStatusMsg:
 		if a.releases != nil {
 			a.releases.status = msg.text
@@ -535,29 +645,50 @@ func (a *App) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	if a.listHelp {
+		lh := a.listHelpHeight()
+		_, maxScroll := a.listHelpLines(lh)
 		switch key.String() {
 		case "ctrl+c":
 			return a, tea.Quit
 		case "?", "esc", "q", "enter":
 			a.listHelp = false
+		case "up", "k":
+			a.helpScroll--
+		case "down", "j":
+			a.helpScroll++
+		case "pgup":
+			a.helpScroll -= lh - 2
+		case "pgdown":
+			a.helpScroll += lh - 2
+		default:
+			if cmd := a.openCredit(key.String()); cmd != nil {
+				return a, cmd
+			}
 		}
+		a.helpScroll = max(0, min(a.helpScroll, maxScroll))
 		return a, nil
 	}
 
 	switch key.String() {
 	case "ctrl+c":
+		if a.query != "" {
+			return a.editQuery("")
+		}
 		return a, tea.Quit
 	case "?":
 		if a.query == "" {
-			a.listHelp = true
-			return a, nil
+			return a.openListHelp()
 		}
 	case "tab":
 		return a.toggleScope()
+	case "shift+tab":
+		return a.setScope((a.scope + 2) % 3)
 	case "ctrl+s":
 		a.sortBy = nextSort(a.sortBy, a.scope)
 		a.applyFilter()
 		return a, nil
+	case "ctrl+t":
+		return a.nextTheme()
 	case "ctrl+x":
 		// ctrl-prefixed, because bare keys are search input on this screen.
 		return a.toggleMark()
@@ -605,8 +736,11 @@ func (a *App) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, cmd
 	}
 
-	if key.Type == tea.KeyRunes {
+	switch key.Type {
+	case tea.KeyRunes:
 		return a.editQuery(a.query + string(key.Runes))
+	case tea.KeySpace:
+		return a.editQuery(a.query + " ")
 	}
 	return a, nil
 }
@@ -710,33 +844,56 @@ func (a *App) view() string {
 		if a.status != "" {
 			status = statusStyle.Render(a.status)
 		}
-		return compose(a.width, a.height, a.version,
+		return compose(a.width, a.height, a.meta,
 			a.selected.NameWithOwner, a.viewActions(), status, a.actionsFooter())
 	case screenBranches:
 		return a.viewBranches()
 	case screenTree:
 		context, body, status, keys := a.tree.chromeParts(a.spinner.View(), a.height-chromeLines)
-		return compose(a.width, a.height, a.version, context, body, status, keys)
+		return compose(a.width, a.height, a.meta, context, body, status, keys)
 	case screenReadme:
 		context, body, status, keys := a.readme.chromeParts(a.spinner.View(), a.width, a.height-chromeLines)
-		return compose(a.width, a.height, a.version, context, body, status, keys)
+		return compose(a.width, a.height, a.meta, context, body, status, keys)
 	case screenConfirmDelete:
 		return a.viewConfirmDelete()
 	case screenReleases:
 		context, body, status, keys := a.releases.chromeParts(a.spinner.View(), a.height-chromeLines)
-		return compose(a.width, a.height, a.version, context, body, status, keys)
+		return compose(a.width, a.height, a.meta, context, body, status, keys)
 	default:
-		return compose(a.width, a.height, a.version,
+		return compose(a.width, a.height, a.meta,
 			"", a.viewList(), a.listStatus(), a.listFooter())
 	}
 }
 
-// listPanelTitle names the repo panel with the active scope, result count, and
-// how many repos are marked for deletion (marks survive scope and query
-// changes, so the count has to stay visible).
-func (a *App) listPanelTitle() string {
-	names := map[searchScope]string{scopeMine: "my repos", scopeStarred: "starred", scopeGitHub: "github"}
-	title := names[a.scope]
+// scopeTabs renders the scope switcher with the active scope as a filled
+// pill, and the result count, sort and deletion marks on the right.
+func (a *App) scopeTabs(w int) string {
+	active := lipgloss.NewStyle().Background(colHL).Foreground(colBg).Bold(true)
+	tabs := " "
+	for _, s := range []struct {
+		scope searchScope
+		name  string
+	}{{scopeMine, "My repos"}, {scopeStarred, "Starred"}, {scopeGitHub, "GitHub"}} {
+		if s.scope == a.scope {
+			tabs += active.Render(" ● "+s.name+" ") + " "
+		} else {
+			tabs += dimStyle.Render(" ○ "+s.name+" ") + " "
+		}
+	}
+	tabs += " " + keyStyle.Render("tab") + dimStyle.Render(" switch")
+	summary := dimStyle.Render(a.listSummary()) + "  "
+	gap := w - lipgloss.Width(tabs) - lipgloss.Width(summary)
+	if gap < 1 {
+		return padRight(tabs, w)
+	}
+	return tabs + strings.Repeat(" ", gap) + summary
+}
+
+// listSummary is the result count, sort and how many repos are marked for
+// deletion (marks survive scope and query changes, so the count has to stay
+// visible).
+func (a *App) listSummary() string {
+	title := ""
 	total := len(a.repos)
 	if a.scope == scopeStarred {
 		total = len(a.starred)
@@ -744,11 +901,11 @@ func (a *App) listPanelTitle() string {
 	switch {
 	case a.scope == scopeGitHub && a.query == "":
 	case a.scope == scopeGitHub:
-		title += fmt.Sprintf(" · %d", len(a.list.Items()))
+		title = plural(len(a.list.Items()), "result", "results")
 	case a.query == "":
-		title += fmt.Sprintf(" · %d", total)
+		title = plural(total, "repo", "repos")
 	default:
-		title += fmt.Sprintf(" · %d/%d", len(a.list.Items()), total)
+		title = fmt.Sprintf("%d of %d", len(a.list.Items()), total)
 	}
 	if a.sortBy != sortDefault {
 		title += " · by " + sortLabel(a.sortBy, a.scope)
@@ -756,11 +913,11 @@ func (a *App) listPanelTitle() string {
 	if n := len(a.marked); n > 0 {
 		title += fmt.Sprintf(" · %d to delete", n)
 	}
-	return title
+	return strings.TrimPrefix(title, " · ")
 }
 
-// viewList renders the search panel, the repo panel, and (on wide terminals) a
-// details panel for the highlighted repo. Background search/refresh progress
+// viewList renders the scope tabs, the search panel, the repo list and (on
+// tall enough terminals) a details block for the highlighted repo. Background search/refresh progress
 // lives in the chrome's status line (listStatus), so stale results stay on
 // screen while a new GitHub search is in flight instead of blanking away on
 // every debounced keystroke.
@@ -770,13 +927,16 @@ func (a *App) viewList() string {
 	case scopeStarred:
 		placeholder = "filter your starred repos…"
 	case scopeGitHub:
-		placeholder = "search GitHub, e.g. torvalds/linux"
+		placeholder = "search GitHub: torvalds/linux, an owner, a name or a pasted URL"
 	}
 	cw := contentWidth(a.width)
-	search := panel("search", searchField(a.query, placeholder), cw, searchBoxLines, true)
+	search := searchPanel("search", searchField(a.query, placeholder), cw, true)
+	tabs := a.scopeTabs(cw) + "\n\n"
 	if a.listHelp {
-		_, lh := a.listPanelSize()
-		return search + "\n" + panel("keys", listHelpBody(), cw, lh, true)
+		lh := a.listHelpHeight()
+		lines, maxScroll := a.listHelpLines(lh)
+		a.helpScroll = min(a.helpScroll, maxScroll)
+		return tabs + search + "\n" + panel("help", strings.Join(lines[a.helpScroll:], "\n"), cw, lh, true)
 	}
 
 	body := a.list.View()
@@ -799,15 +959,29 @@ func (a *App) viewList() string {
 	}
 
 	lw, lh := a.listPanelSize()
-	repos := panel(a.listPanelTitle(), body, lw, lh, false)
-	if _, sw := splitWidths(cw); sw > 0 {
-		detail := panel("details", dimStyle.Render("no selection"), sw, lh, false)
-		if it, ok := a.list.SelectedItem().(repoItem); ok {
-			detail = detailColumn(it.repo, a.localPath(it.repo.NameWithOwner), sw, lh)
+	header := "repositories"
+	if frameless {
+		header = ""
+		if len(a.list.Items()) > 0 {
+			header = a.delegate().header(a.list)
 		}
-		repos = hsplit(repos, detail)
 	}
-	return search + "\n" + repos
+	out := tabs + search + "\n" + panel(header, body, lw, lh, false)
+	if dh := a.detailLines(); dh > 0 {
+		it, ok := a.list.SelectedItem().(repoItem)
+		var r *gh.Repo
+		if ok {
+			r = &it.repo
+		}
+		local := ""
+		var langs []string
+		if r != nil {
+			local = a.localPath(r.NameWithOwner)
+			langs = a.langs[r.NameWithOwner]
+		}
+		out += "\n" + repoDetailBlock(r, langs, local, a.localsKnown, cw, dh)
+	}
+	return out
 }
 
 // listStatus feeds the chrome's status line: in-flight work first, then any
@@ -834,21 +1008,24 @@ func (a *App) viewBranches() string {
 	context := a.selected.NameWithOwner
 	if a.branchLoading || a.picker == nil {
 		status := a.spinner.View() + statusStyle.Render(" Loading branches…")
-		return compose(a.width, a.height, a.version, context, "", status, pickerFooter())
+		return compose(a.width, a.height, a.meta, context, "", status, pickerFooter())
 	}
 	cw := contentWidth(a.width)
-	search := panel("search", searchField(a.picker.query, "filter branches…"), cw, searchBoxLines, true)
-	lw, lh := a.listPanelSize()
+	search := searchPanel("search", searchField(a.picker.query, "filter branches…"), cw, true)
+	lw, lh := a.pickerPanelSize()
 	branches := panel(a.picker.context(), a.picker.body(lh-2), lw, lh, false)
 	if _, sw := splitWidths(cw); sw > 0 {
 		branches = hsplit(branches, detailColumn(a.selected, a.localPath(a.selected.NameWithOwner), sw, lh))
 	}
-	return compose(a.width, a.height, a.version, context, search+"\n"+branches, "", pickerFooter())
+	return compose(a.width, a.height, a.meta, context, search+"\n"+branches, "", pickerFooter())
 }
 
 func (a *App) listFooter() string {
 	if a.listHelp {
-		return keyHint([2]string{"?", "close"}, [2]string{"^C", "quit"})
+		if _, maxScroll := a.listHelpLines(a.listHelpHeight()); maxScroll > 0 {
+			return keyHint([2]string{"↑↓", "scroll"}, [2]string{"g w s i r", "open link"}, [2]string{"?", "close"}, [2]string{"^C", "quit"})
+		}
+		return keyHint([2]string{"g w s i r", "open link"}, [2]string{"?", "close"}, [2]string{"^C", "quit"})
 	}
 	scopeHint := map[searchScope][2]string{
 		scopeMine:    {"tab", "starred"},
@@ -881,13 +1058,22 @@ func (a *App) listFooter() string {
 	)
 }
 
+// listHelpLines is the overlay's content, and how far it can scroll in a panel
+// of height h.
+func (a *App) listHelpLines(h int) (lines []string, maxScroll int) {
+	lines = strings.Split(strings.TrimRight(a.meta.creditsBody()+listHelpBody()+"\n"+a.rateLimitsBody(), "\n"), "\n")
+	return lines, max(0, len(lines)-(h-2))
+}
+
 func listHelpBody() string {
 	return helpBody("Repository list keys", [][2]string{
 		{"type", "filter the list, or search GitHub"},
-		{"tab", "switch: my repos → starred → GitHub search"},
+		{"tab", "switch: my repos → starred → GitHub search (shift+tab back)"},
 		{"ctrl+s", "sort: recent · stars · name"},
+		{"ctrl+t", "next color theme (remembered)"},
 		{"lang:go", "only repos in that language"},
 		{"is:private", "also is:public, is:local (cloned here), is:mine"},
+		{"is:fork", "only forks; is:source hides them"},
 		{"↑↓ pgup pgdn", "move"},
 		{"enter", "open the action menu"},
 		{"esc", "clear the search · leave GitHub · quit"},
@@ -895,7 +1081,7 @@ func listHelpBody() string {
 		{"ctrl+x", "mark or unmark a repo you own for deletion"},
 		{"ctrl+d", "review and delete every marked repo"},
 		{"", ""},
-		{"?", "this overlay (on an empty search)"},
-		{"ctrl+c", "quit"},
+		{"?", "this overlay with credits and API rate limits (on an empty search)"},
+		{"ctrl+c", "clear the search, or quit"},
 	})
 }

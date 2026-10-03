@@ -16,6 +16,8 @@ type Repo struct {
 	Language       string    `json:"language"`
 	OwnerLogin     string    `json:"ownerLogin"`
 	IsOwner        bool      `json:"isOwner"`
+	IsFork         bool      `json:"isFork"`
+	Parent         string    `json:"parent,omitempty"` // "owner/repo" a fork was made from, when known
 }
 
 // URL returns the canonical https URL for the repository.
@@ -58,6 +60,8 @@ query($cursor: String) {
         updatedAt
         primaryLanguage { name }
         owner { login }
+        isFork
+        parent { nameWithOwner }
       }
       pageInfo { hasNextPage endCursor }
     }
@@ -80,6 +84,10 @@ type reposResponse struct {
 				Owner struct {
 					Login string `json:"login"`
 				} `json:"owner"`
+				IsFork bool `json:"isFork"`
+				Parent *struct {
+					NameWithOwner string `json:"nameWithOwner"`
+				} `json:"parent"`
 			} `json:"nodes"`
 			PageInfo struct {
 				HasNextPage bool   `json:"hasNextPage"`
@@ -117,6 +125,8 @@ func (c *Client) FetchRepos() ([]Repo, error) {
 				Language:       n.PrimaryLanguage.Name,
 				OwnerLogin:     n.Owner.Login,
 				IsOwner:        n.Owner.Login == viewer,
+				IsFork:         n.IsFork,
+				Parent:         parentName(n.Parent),
 			})
 		}
 
@@ -128,6 +138,15 @@ func (c *Client) FetchRepos() ([]Repo, error) {
 	}
 
 	return dedupeRepos(repos), nil
+}
+
+func parentName(p *struct {
+	NameWithOwner string `json:"nameWithOwner"`
+}) string {
+	if p == nil {
+		return ""
+	}
+	return p.NameWithOwner
 }
 
 // dedupeRepos drops repeated NameWithOwner entries, keeping the first occurrence

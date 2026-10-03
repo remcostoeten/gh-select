@@ -70,14 +70,15 @@ func sortRepos(repos []gh.Repo, o sortOrder) {
 }
 
 // listQuery is the search text split into free text and filter tokens:
-// lang:go (or language:go), is:private, is:public, is:local and is:mine.
+// lang:go (or language:go), is:private, is:public, is:fork, is:source,
+// is:local and is:mine.
 type listQuery struct {
 	text string
 	lang string
 	is   map[string]bool
 }
 
-var isFilters = map[string]bool{"private": true, "public": true, "local": true, "mine": true}
+var isFilters = map[string]bool{"private": true, "public": true, "fork": true, "source": true, "local": true, "mine": true}
 
 func parseQuery(q string) listQuery {
 	out := listQuery{is: map[string]bool{}}
@@ -103,7 +104,8 @@ func (q listQuery) matches(r gh.Repo, locals map[string]string) bool {
 	if q.lang != "" && strings.ToLower(r.Language) != q.lang {
 		return false
 	}
-	if q.is["private"] && !r.IsPrivate || q.is["public"] && r.IsPrivate || q.is["mine"] && !r.IsOwner {
+	if q.is["private"] && !r.IsPrivate || q.is["public"] && r.IsPrivate || q.is["mine"] && !r.IsOwner ||
+		q.is["fork"] && !r.IsFork || q.is["source"] && r.IsFork {
 		return false
 	}
 	if _, cloned := locals[r.NameWithOwner]; q.is["local"] && !cloned {
@@ -127,6 +129,12 @@ func githubQuery(q string) string {
 		if parsed.is[v] {
 			parts = append(parts, "is:"+v)
 		}
+	}
+	switch {
+	case parsed.is["fork"]:
+		parts = append(parts, "fork:only")
+	case parsed.is["source"]:
+		parts = append(parts, "fork:false")
 	}
 	return strings.Join(parts, " ")
 }

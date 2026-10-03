@@ -106,6 +106,21 @@ func TestListTypeToSearch(t *testing.T) {
 	}
 }
 
+func TestListSearchAcceptsSpaces(t *testing.T) {
+	a := NewApp(nil, sampleRepos, false, nil, "test")
+	a = send(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	a = send(t, a, key("lang:go"))
+	a = send(t, a, key("space"))
+	a = send(t, a, key("alpha"))
+	if a.query != "lang:go alpha" {
+		t.Fatalf("query = %q, want %q", a.query, "lang:go alpha")
+	}
+	if got := len(a.list.Items()); got != 1 {
+		t.Fatalf("filtered items = %d, want 1", got)
+	}
+}
+
 // Tab toggles between filtering owned repos and GitHub search; the query and
 // scope transitions must behave without touching the network.
 func TestScopeToggle(t *testing.T) {
@@ -475,7 +490,7 @@ func TestLocalCloneAwareMenu(t *testing.T) {
 	a.SetLocalClones(map[string]string{"remcostoeten/alpha": "/src/alpha"})
 	a = send(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
 
-	if !strings.Contains(a.View(), "local") {
+	if !strings.Contains(a.View(), iconLocal) {
 		t.Error("list view missing the local badge")
 	}
 
@@ -555,5 +570,26 @@ func TestShortCount(t *testing.T) {
 		if got := shortCount(n); got != want {
 			t.Errorf("shortCount(%d) = %q, want %q", n, got, want)
 		}
+	}
+}
+
+func TestBackspaceLeavesActionMenu(t *testing.T) {
+	a := NewApp(nil, sampleRepos, false, nil, "test")
+	a = send(t, a, tea.WindowSizeMsg{Width: 100, Height: 30})
+	a = send(t, a, key("enter"))
+	a = send(t, a, tea.KeyMsg{Type: tea.KeyBackspace})
+	if a.screen != screenList {
+		t.Fatalf("screen = %v, want list", a.screen)
+	}
+}
+
+func TestBackspaceLeavesPickerOnlyWhenQueryIsEmpty(t *testing.T) {
+	p := newPicker([]string{"main", "dev"})
+	p.handleKey("d", []rune("d"), true)
+	if got := p.handleKey("backspace", nil, false); got != pickerContinue || p.query != "" {
+		t.Fatalf("first backspace: outcome=%v query=%q", got, p.query)
+	}
+	if got := p.handleKey("backspace", nil, false); got != pickerBack {
+		t.Fatalf("second backspace: outcome=%v, want back", got)
 	}
 }

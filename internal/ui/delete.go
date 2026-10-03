@@ -100,6 +100,10 @@ func (a *App) updateConfirmDelete(msg tea.Msg) (tea.Model, tea.Cmd) {
 	c := a.confirm
 	switch key.String() {
 	case "ctrl+c":
+		if c.typed != "" {
+			c.typed, c.status = "", ""
+			return a, nil
+		}
 		return a, tea.Quit
 	case "esc":
 		a.confirm = nil
@@ -170,7 +174,7 @@ func (a *App) viewConfirmDelete() string {
 		status = errStyle.Render(c.status)
 	}
 	body := panel("confirm deletion", b.String(), cw, h, true)
-	return compose(a.width, a.height, a.version, "delete", body, status, keyHint(
+	return compose(a.width, a.height, a.meta, "delete", body, status, keyHint(
 		[2]string{"type", "confirmation"},
 		[2]string{"enter", "delete"},
 		[2]string{"esc", "cancel"},

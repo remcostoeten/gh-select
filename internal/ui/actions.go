@@ -62,7 +62,7 @@ func (a *App) updateActions(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "q", "ctrl+c":
 		return a, tea.Quit
-	case "esc", "left", "h":
+	case "esc", "left", "h", "backspace":
 		a.screen = screenList
 		a.status = "" // don't carry an actions-screen message back to the list
 		return a, nil
@@ -157,10 +157,10 @@ func (a *App) actionsBody(includeSummary bool) string {
 			b.WriteString("\n") // blank line between clone vs. copy/open groups
 		}
 
-		cursor := "   "
+		cursor := ""
 		label := it.label
 		if i == a.actionCursor {
-			cursor = " " + selectedStyle.Render("❯") + " "
+			cursor = selectRow("")
 			label = selectedStyle.Render(label)
 		}
 		pad := strings.Repeat(" ", labelW-lipgloss.Width(it.label))
@@ -180,25 +180,26 @@ func (a *App) actionsBody(includeSummary bool) string {
 
 func detailColumn(r gh.Repo, localPath string, w, h int) string {
 	inner := w - 4
-	kv := func(label, value string) string {
-		return dimStyle.Render(fmt.Sprintf("%-9s", label)) + value
-	}
-	access := publicBadge.Render("public")
+	kv := func(label, value string) string { return field(label, value, 8) }
+	access := labeled(publicBadge, iconPublic, "public")
 	if r.IsPrivate {
-		access = privateBadge.Render("private")
+		access = labeled(privateBadge, iconPrivate, "private")
 	}
-	facts := []string{kv("access", access)}
+	facts := []string{kv("Access", access)}
+	if r.IsFork {
+		facts = append(facts, kv("Origin", truncate(origin(r), inner-10)))
+	}
 	if r.Language != "" {
-		facts = append(facts, kv("language", langLabel(r.Language)))
+		facts = append(facts, kv("Language", langLabel(r.Language)))
 	}
 	if r.StargazerCount > 0 {
-		facts = append(facts, kv("stars", starLabel(r.StargazerCount)))
+		facts = append(facts, kv("Stars", starLabel(r.StargazerCount)))
 	}
 	if !r.UpdatedAt.IsZero() {
-		facts = append(facts, kv("updated", age(r.UpdatedAt, time.Now())))
+		facts = append(facts, kv("Updated", age(r.UpdatedAt, time.Now())))
 	}
 	if localPath != "" {
-		facts = append(facts, kv("local", publicBadge.Render(truncate(localPath, inner-9))))
+		facts = append(facts, kv("Local", publicBadge.Render(truncate(localPath, inner-10))))
 	}
 
 	desc := dimStyle.Render("no description")
@@ -219,11 +220,102 @@ func detailColumn(r gh.Repo, localPath string, w, h int) string {
 	return panel(r.NameWithOwner, body+strings.Join(facts, "\n"), w, h, false)
 }
 
+// field renders a key/value detail row with the label left-aligned in a
+// column of labelW cells.
+func field(label, value string, labelW int) string {
+	return columnStyle.Render(padRight(label, labelW)) + "  " + value
+}
+
+// repoDetailLines is the height of the details block under the repo list.
+const repoDetailLines = 11
+
+// repoDetailBlock lists the highlighted repo's facts as aligned key/value
+// rows under a hairline, or boxed in a panel when borders are on. r is nil
+// when nothing is highlighted. langs falls back to the primary language until
+// the full list has loaded. localsKnown is false while the first disk scan
+// is still running.
+func repoDetailBlock(r *gh.Repo, langs []string, localPath string, localsKnown bool, w, h int) string {
+	none := dimStyle.Render("—")
+	rows := []string{dimStyle.Render("no selection")}
+	if r != nil {
+		valueW := w - 4 - 12
+		about := dimStyle.Render("no description")
+		if r.Description != "" {
+			about = lipgloss.NewStyle().Foreground(colFg).Render(truncate(r.Description, valueW))
+		}
+		access := labeled(publicBadge, iconPublic, "public")
+		if r.IsPrivate {
+			access = labeled(privateBadge, iconPrivate, "private")
+		}
+		lang, stars, updated, local := none, none, none, dimStyle.Render("not cloned")
+		if len(langs) == 0 && r.Language != "" {
+			langs = []string{r.Language}
+		}
+		if len(langs) > 0 {
+			lang = langList(langs, valueW)
+		}
+		if r.StargazerCount > 0 {
+			stars = lipgloss.NewStyle().Foreground(colFg).Render(starLabel(r.StargazerCount))
+		}
+		if !r.UpdatedAt.IsZero() {
+			updated = lipgloss.NewStyle().Foreground(colFg).Render(age(r.UpdatedAt, time.Now()))
+		}
+		if !localsKnown {
+			local = dimStyle.Render("searching disk…")
+		}
+		if localPath != "" {
+			local = labeled(markedStyle, iconLocal, truncate(localPath, valueW-2))
+		}
+		name := r.NameWithOwner
+		if r.IsOwner {
+			name = r.Name()
+		}
+		rows = []string{
+			field("Repository", lipgloss.NewStyle().Foreground(colFg).Bold(true).Render(name), 10),
+			field("About", about, 10),
+			field("Access", access, 10),
+			field("Origin", origin(*r), 10),
+			field("Language", lang, 10),
+			field("Stars", stars, 10),
+			field("Updated", updated, 10),
+			field("URL", statusStyle.Render(r.URL()), 10),
+			field("Local", local, 10),
+		}
+	}
+	if !frameless {
+		return panel("details", strings.Join(rows, "\n"), w, h, false)
+	}
+	out := " " + dimStyle.Render(strings.Repeat("─", max(w-2, 0))) + " \n"
+	for i := 1; i < h; i++ {
+		line := ""
+		if i >= 2 && i-2 < len(rows) {
+			line = rows[i-2]
+		}
+		out += padRight("  "+truncate(line, w-4), w)
+		if i < h-1 {
+			out += "\n"
+		}
+	}
+	return out
+}
+
+// origin says whether a repo is a fork and of what, or the original.
+func origin(r gh.Repo) string {
+	switch {
+	case r.IsFork && r.Parent != "":
+		return labeled(forkBadge, iconFork, "fork") + dimStyle.Render(" of ") +
+			lipgloss.NewStyle().Foreground(colFg).Render(r.Parent)
+	case r.IsFork:
+		return labeled(forkBadge, iconFork, "fork")
+	}
+	return dimStyle.Render("original")
+}
+
 // repoMeta renders the visibility badge plus language and star count.
 func repoMeta(r gh.Repo) string {
-	meta := publicBadge.Render("public")
+	meta := labeled(publicBadge, iconPublic, "public")
 	if r.IsPrivate {
-		meta = privateBadge.Render("private")
+		meta = labeled(privateBadge, iconPrivate, "private")
 	}
 	if r.Language != "" {
 		meta += dimStyle.Render(" · ") + langLabel(r.Language)

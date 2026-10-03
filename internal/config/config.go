@@ -15,9 +15,12 @@ type Config struct {
 	CacheTTL    time.Duration // how long cached data is considered fresh
 	CloneDir    string        // where clones land (empty = current directory)
 	DownloadDir string        // where release assets land (empty = current directory)
+	ScanDirs    []string      // extra directories searched for local clones
 	NoColor     bool          // disable ANSI styling
-	Theme       string        // UI color theme name (empty = default)
+	Theme       string        // UI color theme name from GH_SELECT_THEME (empty = unset)
+	SavedTheme  string        // theme last picked with ctrl+t (empty = none)
 	Border      string        // panel border style name (empty = default)
+	Icons       string        // icon set name (empty = default)
 	Transparent bool          // don't paint the app background
 }
 
@@ -29,11 +32,48 @@ func Load() Config {
 		CacheTTL:    cacheTTL(),
 		CloneDir:    ExpandHome(os.Getenv("GH_SELECT_CLONE_DIR")),
 		DownloadDir: ExpandHome(os.Getenv("GH_SELECT_DOWNLOAD_DIR")),
+		ScanDirs:    scanDirs(),
 		NoColor:     os.Getenv("NO_COLOR") != "",
 		Theme:       os.Getenv("GH_SELECT_THEME"),
+		SavedTheme:  savedTheme(),
 		Border:      os.Getenv("GH_SELECT_BORDER"),
+		Icons:       os.Getenv("GH_SELECT_ICONS"),
 		Transparent: os.Getenv("GH_SELECT_TRANSPARENT") != "",
 	}
+}
+
+// ConfigDir resolves $XDG_CONFIG_HOME/gh-select, falling back to ~/.config.
+func ConfigDir() string {
+	base := os.Getenv("XDG_CONFIG_HOME")
+	if base == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		base = filepath.Join(home, ".config")
+	}
+	return filepath.Join(base, "gh-select")
+}
+
+// ThemesDir holds custom theme files, one <name>.json per theme.
+func ThemesDir() string { return filepath.Join(ConfigDir(), "themes") }
+
+func themeStatePath() string { return filepath.Join(ConfigDir(), "theme") }
+
+func savedTheme() string {
+	data, err := os.ReadFile(themeStatePath())
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// SaveTheme remembers the theme picked inside the TUI for later runs.
+func SaveTheme(name string) error {
+	if err := os.MkdirAll(ConfigDir(), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(themeStatePath(), []byte(name+"\n"), 0o644)
 }
 
 // cacheDir resolves $XDG_CACHE_HOME/gh-select, falling back to ~/.cache.
@@ -60,6 +100,17 @@ func ExpandHome(path string) string {
 		return path
 	}
 	return filepath.Join(home, strings.TrimPrefix(path, "~"))
+}
+
+// scanDirs reads GH_SELECT_SCAN_DIRS, a list separated like PATH.
+func scanDirs() []string {
+	var dirs []string
+	for _, dir := range filepath.SplitList(os.Getenv("GH_SELECT_SCAN_DIRS")) {
+		if dir = strings.TrimSpace(dir); dir != "" {
+			dirs = append(dirs, ExpandHome(dir))
+		}
+	}
+	return dirs
 }
 
 // cacheTTL reads GH_SELECT_CACHE_TTL (seconds), defaulting to 30 minutes.

@@ -63,6 +63,9 @@ func starLabel(n int) string {
 	if n <= 0 {
 		return ""
 	}
+	if nerdIcons {
+		return iconStar + " " + shortCount(n)
+	}
 	return "★" + shortCount(n)
 }
 
