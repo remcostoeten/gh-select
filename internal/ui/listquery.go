@@ -98,8 +98,6 @@ func parseQuery(q string) listQuery {
 	return out
 }
 
-func (q listQuery) hasFilters() bool { return q.lang != "" || len(q.is) > 0 }
-
 func (q listQuery) matches(r gh.Repo, locals map[string]string) bool {
 	if q.lang != "" && strings.ToLower(r.Language) != q.lang {
 		return false

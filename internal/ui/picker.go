@@ -36,16 +36,6 @@ func (p *pickerModel) rows() []string {
 	return out
 }
 
-func (p *pickerModel) clampCursor() {
-	n := len(p.rows())
-	if p.cursor >= n {
-		p.cursor = n - 1
-	}
-	if p.cursor < 0 {
-		p.cursor = 0
-	}
-}
-
 // pickerOutcome reports what a keypress decided.
 type pickerOutcome int
 
