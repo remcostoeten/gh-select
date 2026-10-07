@@ -6,28 +6,27 @@
   <a href="https://github.com/remcostoeten/gh-select/releases/latest"><img src="https://shieldcn.dev/github/remcostoeten/gh-select/release.svg?font=jetbrains-mono" alt="release" /></a>
   <a href="https://github.com/remcostoeten/gh-select/actions/workflows/ci.yml"><img src="https://shieldcn.dev/github/remcostoeten/gh-select/ci.svg?font=jetbrains-mono" alt="CI" /></a>
   <a href="LICENSE"><img src="https://shieldcn.dev/github/remcostoeten/gh-select/license.svg?font=jetbrains-mono" alt="license" /></a>
+  <img src="https://shieldcn.dev/badge/go-1.26-black.svg?font=jetbrains-mono&logo=go" alt="go: 1.26" />
   <img src="https://shieldcn.dev/badge/runs%20as-gh%20extension-black.svg?font=jetbrains-mono&logo=github" alt="runs as: gh extension" />
   <img src="https://shieldcn.dev/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows%20%7C%20FreeBSD-black.svg?font=jetbrains-mono" alt="platforms: macOS, Linux, Windows, FreeBSD" />
 </p>
 
 <p align="center">
-  <img src="assets/gh-select-demo.gif" width="100%" alt="Filtering your own repos with is:public, tabbing to a GitHub search for charmbracelet bubbletea, browsing its file tree, marking the examples and tutorials folders, opening a folder, previewing the rendered README, then cycling color themes with ctrl+t" />
-</p>
-<p align="center">
-  <sub>Recorded with vhs in bash, catppuccin theme. Re-record with <code>scripts/dev.sh demo</code>.</sub>
+  <img src="assets/showcase.gif" width="100%" alt="Starting gh select, filtering to the gh-select repo, opening Browse files, previewing README.md and saving it with s, marking README.md and cli.go with space and partial cloning them with c, then tabbing to GitHub search for charmbracelet bubbletea and opening its action menu" />
 </p>
 
-`gh select` opens a searchable list of your repositories, your starred repos or all of GitHub. Pick one to clone it, open it, read its releases or browse its files without cloning, then clone only the folders you marked.
+`gh select` is an extension for the [GitHub CLI](https://cli.github.com/). Browse all your repositories, clone one, open it in your editor or grab only the files and folders you need. For someone else's code, search all of GitHub by name, owner or URL from the same list.
+
+```bash
+gh extension install remcostoeten/gh-select
+```
 
 - **Search** your own, organization and collaborator repos from a local cache, your starred repos, or all of GitHub by name, owner or pasted URL.
 - **Browse** any repository's file tree and preview files, with markdown rendered, before cloning anything.
-- **Partial clone** only the folders you mark, with `git clone --filter=blob:none --sparse`.
+- **Partial clone** only the files and folders you mark, with `git clone --filter=blob:none --sparse`, or save them without git.
 - **Local clones** anywhere under your home directory are tagged, and their menu offers open in editor and pull.
 - **Releases** list their notes and assets, preselect the build for your machine, verify checksums and unpack archives.
 - **Delete** repositories you own, one at a time or in bulk, behind a retyped confirmation.
-- **Jump** into a picked repo with `--print-path` and a one-line shell function.
-
-The full changelog is in [CHANGELOG.md](CHANGELOG.md).
 
 ## Usage
 
@@ -89,20 +88,6 @@ export GH_SELECT_CLONE_DIR=~/dev
 ```
 
 Existing clones are found anywhere under your home directory, including git worktrees and submodules, and matched by their git remote. `GH_SELECT_SCAN_DIRS` lists directories to search first, separated like `PATH`.
-
-### Jumping into a repo
-
-`--print-path` prints the picked repo's path on stdout, cloning it first if needed. Quitting without a pick exits with status 130, so these wrappers leave your directory alone:
-
-```fish
-function ghcd
-    set -l dir (gh select --print-path); and cd $dir
-end
-```
-
-```bash
-ghcd() { local dir; dir=$(gh select --print-path) && cd "$dir"; }
-```
 
 ### Themes
 
@@ -172,7 +157,7 @@ Requires Go 1.26 or newer.
 scripts/dev.sh check     # vet, test and build
 scripts/dev.sh run       # build and run ./gh-select
 scripts/dev.sh install   # install the local build as gh select
-scripts/dev.sh demo      # re-record the demo gif with vhs
+scripts/dev.sh demo      # re-record assets/showcase.gif with vhs and Remotion
 ```
 
 <br/>
