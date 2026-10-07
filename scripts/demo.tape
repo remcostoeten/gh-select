@@ -1,71 +1,54 @@
-Output assets/gh-select-demo.gif
+Output showcase/public/raw.mp4
 Set FontFamily "JetBrainsMono Nerd Font Mono"
-Set FontSize 15
+Set FontSize 16
 Set Width 1200
-Set Height 680
+Set Height 700
 Set Theme "Catppuccin Mocha"
 Set Padding 16
-Set Framerate 24
-Set TypingSpeed 70ms
+Set Framerate 30
+Set TypingSpeed 40ms
 Set Shell bash
 Hide
-Type "export PATH=$PWD:$PATH GH_CONFIG_DIR=${GH_CONFIG_DIR:-$HOME/.config/gh} XDG_CONFIG_HOME=$(mktemp -d); clear"
+Type "export PATH=$PWD:$PATH GH_CONFIG_DIR=${GH_CONFIG_DIR:-$HOME/.config/gh} XDG_CONFIG_HOME=$(mktemp -d) GH_SELECT_CLONE_DIR=$(mktemp -d) PS1='$ '; cd $(mktemp -d); clear"
 Enter
-Type "gh-select"
-Enter
-Sleep 3s
-Type "is:public "
-Sleep 500ms
 Show
-Sleep 800ms
-Type "gh-sel"
-Sleep 2s
-Tab
-Sleep 1.5s
-Tab
-Sleep 800ms
-Escape
 Sleep 400ms
-Type "charmbracelet bubbletea"
-Sleep 3s
+Type "gh select"
+Sleep 200ms
 Enter
-Sleep 1.2s
-Down 3
+Sleep 1500ms
+Type "gh-select"
 Sleep 600ms
 Enter
-Sleep 4s
-Type "j"
-Sleep 400ms
-Space
-Sleep 500ms
-Type "jj"
-Sleep 400ms
-Space
-Sleep 600ms
-Type "l"
-Sleep 1.8s
-Type "h"
-Sleep 700ms
-Set TypingSpeed 90ms
-Type "jjjjjjjjj"
-Set TypingSpeed 70ms
-Sleep 500ms
-Type "l"
-Sleep 2.8s
-Set TypingSpeed 120ms
-Type "jjjjjjjjjjjj"
-Set TypingSpeed 70ms
-Sleep 1.2s
-Escape
-Sleep 1.5s
-Escape
-Sleep 700ms
-Escape
 Sleep 900ms
-Ctrl+T
-Sleep 1.4s
-Ctrl+T
-Sleep 2s
+Type "5"
+Sleep 1500ms
+Down 7
+Sleep 400ms
+Enter
+Sleep 1500ms
+Type "s"
+Sleep 1800ms
+Escape
+Sleep 400ms
+Space
+Sleep 250ms
+Down
+Space
+Sleep 800ms
+Type "c"
+Sleep 5s
+Type "clear; gh select"
+Enter
+Sleep 1200ms
+Tab
+Sleep 400ms
+Tab
+Sleep 500ms
+Type "charmbracelet bubbletea"
+Sleep 2500ms
+Enter
+Sleep 1800ms
 Hide
 Ctrl+C
 Ctrl+C
