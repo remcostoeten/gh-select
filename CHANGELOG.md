@@ -2,7 +2,40 @@
 
 All notable changes to gh-select are documented here.
 
-## [Unreleased]
+## [2.6.0] - 2026-10-17
+
+### Added
+- **New release notice.** Once a day the app checks GitHub for a newer
+  release, cached in `latest-release.json` under the cache directory. When
+  one exists the header shows `vX.Y.Z available` with the upgrade command,
+  `gh extension upgrade gh-select` for extension installs or the releases
+  page otherwise, and `gh select version` repeats it on stderr.
+  `GH_SELECT_NO_UPDATE_CHECK=1` or `CI` turns the check off; local builds
+  never check.
+- **Archived repos, last push, license and size.** Forks get a labeled
+  `fork` badge and archived repos an `archived` badge with a dimmed row. A
+  Pushed column shows the time since the last push. The details show the
+  archived state, last push, SPDX license and disk size. `is:archived` and
+  `is:active` filter on it, in the lists and in GitHub search.
+- **`ctrl+g`** cycles the border style and **`ctrl+o`** toggles Nerd Font
+  icons for the current session.
+
+### Changed
+- **New footer.** Key hints render as keycaps, and the author, source, last
+  update and commit moved from the header to a credit line under them.
+- **`gruvbox` is the default theme**, replacing `catppuccin`.
+- **The `updated` sort orders by last push.**
+- **Cache schema v3.** Existing caches are refetched once to pick up the new
+  repo fields.
+- **Faster repo list.** Your repos and stars load as parallel REST pages
+  instead of one GraphQL page after another: 300 repos take about 1s instead
+  of 6.6s, and 93 stars about 1s instead of 2.8s. Fork parents and languages,
+  which the REST listing leaves out, come from one small GraphQL lookup.
+- **Smoother scrolling.** Column widths are measured once per result set
+  instead of once per visible row, which cut a keypress from about 18ms of
+  rendering to 0.3ms with 300 repos.
+- **Quicker start.** The GitHub token is read once instead of once per API
+  client, saving about 100ms before the first frame.
 
 ## [2.5.0] - 2026-10-03
 

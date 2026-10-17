@@ -103,10 +103,13 @@ type App struct {
 	saveFn func([]gh.Repo) // persist freshly fetched repos to cache
 	meta   buildMeta       // version, author, source and build shown in the header
 
+	updateCheck func() (tag, hint string) // looks for a newer release on start; nil skips it
+
 	screen   screen
 	list     list.Model
-	repos    []gh.Repo // viewer's repos (scopeMine); list items are query matches
-	query    string    // always-on search text for the repo list
+	rows     compactDelegate // the list's row renderer, shared with the column header
+	repos    []gh.Repo       // viewer's repos (scopeMine); list items are query matches
+	query    string          // always-on search text for the repo list
 	selected gh.Repo
 
 	// search scope + debounced GitHub search state
@@ -200,10 +203,13 @@ func NewApp(client *gh.Client, initial []gh.Repo, refresh bool, saveFn func([]gh
 
 // refreshDelegate rebuilds the row renderer so it sees the current scope and
 // the live locals/marked maps.
-func (a *App) refreshDelegate() { a.list.SetDelegate(a.delegate()) }
+func (a *App) refreshDelegate() {
+	a.rows = a.delegate()
+	a.list.SetDelegate(a.rows)
+}
 
 func (a *App) delegate() compactDelegate {
-	return compactDelegate{bare: a.scope == scopeMine, locals: a.locals, marked: a.marked}
+	return compactDelegate{bare: a.scope == scopeMine, locals: a.locals, marked: a.marked, memo: &columnsMemo{}}
 }
 
 // SetLocalClones tells the UI which repos already exist on disk, keyed by
@@ -293,7 +299,7 @@ func (a *App) listHelpHeight() int { return a.height - chromeLines - listTopLine
 // detailLines is the height of the details block under the list, or 0 when
 // the terminal is too short to spare it.
 func (a *App) detailLines() int {
-	if a.listHelpHeight()-repoDetailLines < 8 {
+	if a.listHelpHeight()-repoDetailLines < 14 {
 		return 0
 	}
 	return repoDetailLines
@@ -403,9 +409,9 @@ func (a *App) editQuery(next string) (tea.Model, tea.Cmd) {
 
 func (a *App) Init() tea.Cmd {
 	if a.loading {
-		return tea.Batch(a.fetchCmd(), a.spinner.Tick, a.scanLocalsCmd())
+		return tea.Batch(a.fetchCmd(), a.spinner.Tick, a.scanLocalsCmd(), a.updateCheckCmd())
 	}
-	return a.scanLocalsCmd()
+	return tea.Batch(a.scanLocalsCmd(), a.updateCheckCmd())
 }
 
 // anyLoading reports whether any screen is awaiting a network fetch (used to
@@ -604,6 +610,11 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.status = msg.text
 		return a, nil
 
+	case updateAvailableMsg:
+		a.meta.latest = msg.tag
+		a.meta.hint = msg.hint
+		return a, nil
+
 	case releasesStatusMsg:
 		if a.releases != nil {
 			a.releases.status = msg.text
@@ -689,6 +700,12 @@ func (a *App) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case "ctrl+t":
 		return a.nextTheme()
+	case "ctrl+g":
+		a.markNote = dimStyle.Render("border ") + keyStyle.Render(cycleBorder())
+		return a, nil
+	case "ctrl+o":
+		a.markNote = dimStyle.Render("icons ") + keyStyle.Render(toggleIcons())
+		return a, nil
 	case "ctrl+x":
 		// ctrl-prefixed, because bare keys are search input on this screen.
 		return a.toggleMark()
@@ -880,7 +897,7 @@ func (a *App) scopeTabs(w int) string {
 			tabs += dimStyle.Render(" ○ "+s.name+" ") + " "
 		}
 	}
-	tabs += " " + keyStyle.Render("tab") + dimStyle.Render(" switch")
+	tabs += " " + keycapStyle.Render("tab") + dimStyle.Render(" switch")
 	summary := dimStyle.Render(a.listSummary()) + "  "
 	gap := w - lipgloss.Width(tabs) - lipgloss.Width(summary)
 	if gap < 1 {
@@ -950,7 +967,7 @@ func (a *App) viewList() string {
 			body = dimStyle.Render("type a username, repo, or owner/name, e.g. torvalds/linux")
 		case a.query != "" && a.scope != scopeGitHub:
 			body = dimStyle.Render("no repositories match “"+a.query+"”") + "\n\n" +
-				keyStyle.Render("tab") + dimStyle.Render(" to search all of GitHub for it")
+				keycapStyle.Render("tab") + dimStyle.Render(" to search all of GitHub for it")
 		case a.query != "":
 			body = dimStyle.Render("no repositories match “" + a.query + "”")
 		default:
@@ -963,7 +980,7 @@ func (a *App) viewList() string {
 	if frameless {
 		header = ""
 		if len(a.list.Items()) > 0 {
-			header = a.delegate().header(a.list)
+			header = a.rows.header(a.list)
 		}
 	}
 	out := tabs + search + "\n" + panel(header, body, lw, lh, false)
@@ -1071,9 +1088,12 @@ func listHelpBody() string {
 		{"tab", "switch: my repos → starred → GitHub search (shift+tab back)"},
 		{"ctrl+s", "sort: recent · stars · name"},
 		{"ctrl+t", "next color theme (remembered)"},
+		{"ctrl+g", "next border style (this session)"},
+		{"ctrl+o", "toggle Nerd Font icons (this session)"},
 		{"lang:go", "only repos in that language"},
 		{"is:private", "also is:public, is:local (cloned here), is:mine"},
 		{"is:fork", "only forks; is:source hides them"},
+		{"is:archived", "only archived repos; is:active hides them"},
 		{"↑↓ pgup pgdn", "move"},
 		{"enter", "open the action menu"},
 		{"esc", "clear the search · leave GitHub · quit"},

@@ -1,7 +1,9 @@
 package gh
 
 import (
+	"fmt"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -18,6 +20,19 @@ type Repo struct {
 	IsOwner        bool      `json:"isOwner"`
 	IsFork         bool      `json:"isFork"`
 	Parent         string    `json:"parent,omitempty"` // "owner/repo" a fork was made from, when known
+	PushedAt       time.Time `json:"pushedAt"`
+	IsArchived     bool      `json:"isArchived"`
+	License        string    `json:"license,omitempty"` // SPDX id, "NOASSERTION" for an unrecognized license
+	DiskKB         int       `json:"diskKB"`
+}
+
+// LastActivity is when code was last pushed, falling back to the last update
+// of any kind for payloads that lack a push time.
+func (r Repo) LastActivity() time.Time {
+	if r.PushedAt.IsZero() {
+		return r.UpdatedAt
+	}
+	return r.PushedAt
 }
 
 // URL returns the canonical https URL for the repository.
@@ -33,62 +48,43 @@ func (r Repo) Name() string {
 	return r.NameWithOwner
 }
 
-// reposQuery fetches a page of the repositories the viewer can reach, newest
-// first: their own, those of organizations they belong to, and those they were
-// added to as a collaborator.
-//
-// Both affiliation arguments are needed and they are not interchangeable:
-// affiliations filters on the viewer's relationship to the repository, while
-// ownerAffiliations filters on the owner's — and its default of
-// [OWNER, COLLABORATOR] would drop every organization repository regardless of
-// what affiliations says. The two are intersected, so both list all three.
-//
-// defaultBranchRef is deliberately omitted: it roughly triples per-page latency
-// (it resolves a ref server-side), and we don't need it — tree/clone operations
-// default to HEAD. Keeping the query to cheap fields holds each page near ~1.4s;
-// owner { login } resolves from the node itself and costs nothing extra.
-const reposQuery = `
+// reposPerPage and reposWave size the concurrent REST page requests: GraphQL
+// can only page by cursor, one round-trip after another, while numbered REST
+// pages can be fetched side by side. Half-size pages come back faster than
+// full ones, and one wave covers 400 repos.
+const (
+	reposPerPage = 50
+	reposWave    = 8
+	reposPath    = "user/repos?affiliation=owner,collaborator,organization_member&sort=updated"
+	starredPath  = "user/starred?sort=created&direction=desc"
+)
+
+// forksQuery reads the viewer's login and the parent and language of every
+// fork the viewer can reach, which the REST listing leaves out. Both affiliation
+// arguments are needed: ownerAffiliations defaults to [OWNER, COLLABORATOR]
+// and would drop organization forks regardless of what affiliations says.
+const forksQuery = `
 query($cursor: String) {
   viewer {
     login
-    repositories(first: 100, after: $cursor, affiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR], ownerAffiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR], orderBy: {field: UPDATED_AT, direction: DESC}) {
+    repositories(first: 100, after: $cursor, isFork: true, affiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR], ownerAffiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR]) {
       nodes {
         nameWithOwner
-        description
-        isPrivate
-        stargazerCount
-        updatedAt
-        primaryLanguage { name }
-        owner { login }
-        isFork
         parent { nameWithOwner }
+        primaryLanguage { name }
       }
       pageInfo { hasNextPage endCursor }
     }
   }
 }`
 
-type reposResponse struct {
+type forkFacts struct{ parent, language string }
+
+type forksResponse struct {
 	Viewer struct {
 		Login        string `json:"login"`
 		Repositories struct {
-			Nodes []struct {
-				NameWithOwner   string    `json:"nameWithOwner"`
-				Description     string    `json:"description"`
-				IsPrivate       bool      `json:"isPrivate"`
-				StargazerCount  int       `json:"stargazerCount"`
-				UpdatedAt       time.Time `json:"updatedAt"`
-				PrimaryLanguage struct {
-					Name string `json:"name"`
-				} `json:"primaryLanguage"`
-				Owner struct {
-					Login string `json:"login"`
-				} `json:"owner"`
-				IsFork bool `json:"isFork"`
-				Parent *struct {
-					NameWithOwner string `json:"nameWithOwner"`
-				} `json:"parent"`
-			} `json:"nodes"`
+			Nodes    []forkNode `json:"nodes"`
 			PageInfo struct {
 				HasNextPage bool   `json:"hasNextPage"`
 				EndCursor   string `json:"endCursor"`
@@ -98,46 +94,90 @@ type reposResponse struct {
 }
 
 // FetchRepos returns every repository the authenticated user can reach: their
-// own, their organizations', and those they collaborate on. It pages through the
-// GraphQL API 100 repos at a time (one round-trip per page) which is far fewer
-// requests and less data than the REST list endpoint.
+// own, their organizations', and those they collaborate on, most recently
+// updated first. The REST pages and the fork parents load concurrently, so a
+// few hundred repos cost about one round-trip instead of one per 100 repos.
 func (c *Client) FetchRepos() ([]Repo, error) {
-	var repos []Repo
-	var cursor *string
+	var (
+		wg      sync.WaitGroup
+		viewer  string
+		forks   map[string]forkFacts
+		forkErr error
+	)
+	wg.Go(func() { viewer, forks, forkErr = c.fetchForks() })
+	repos, err := c.fetchRepoPages(reposPath)
+	wg.Wait()
+	if err != nil {
+		return nil, err
+	}
+	if forkErr != nil {
+		return nil, forkErr
+	}
+	return mergeForks(repos, viewer, forks), nil
+}
 
-	for {
-		vars := map[string]interface{}{"cursor": cursor}
-
-		var resp reposResponse
-		if err := c.gql.Do(reposQuery, vars, &resp); err != nil {
-			return nil, err
+func mergeForks(repos []Repo, viewer string, forks map[string]forkFacts) []Repo {
+	for i := range repos {
+		repos[i].IsOwner = repos[i].OwnerLogin == viewer
+		if f, ok := forks[repos[i].NameWithOwner]; ok {
+			repos[i].Parent = f.parent
+			if repos[i].Language == "" {
+				repos[i].Language = f.language
+			}
 		}
+	}
+	return dedupeRepos(repos)
+}
 
-		viewer := resp.Viewer.Login
-		page := resp.Viewer.Repositories
-		for _, n := range page.Nodes {
-			repos = append(repos, Repo{
-				NameWithOwner:  n.NameWithOwner,
-				Description:    n.Description,
-				IsPrivate:      n.IsPrivate,
-				StargazerCount: n.StargazerCount,
-				UpdatedAt:      n.UpdatedAt,
-				Language:       n.PrimaryLanguage.Name,
-				OwnerLogin:     n.Owner.Login,
-				IsOwner:        n.Owner.Login == viewer,
-				IsFork:         n.IsFork,
-				Parent:         parentName(n.Parent),
+// fetchRepoPages requests reposWave pages of a REST repo listing at a time
+// until one comes back short, keeping the pages in order.
+func (c *Client) fetchRepoPages(listing string) ([]Repo, error) {
+	var repos []Repo
+	for first := 1; ; first += reposWave {
+		pages := make([][]restRepo, reposWave)
+		errs := make([]error, reposWave)
+		var wg sync.WaitGroup
+		for i := range pages {
+			wg.Go(func() {
+				path := fmt.Sprintf("%s&per_page=%d&page=%d", listing, reposPerPage, first+i)
+				errs[i] = c.rest.Get(path, &pages[i])
 			})
 		}
+		wg.Wait()
+		for i, page := range pages {
+			if errs[i] != nil {
+				return nil, errs[i]
+			}
+			for _, r := range page {
+				repos = append(repos, r.toRepo())
+			}
+			if len(page) < reposPerPage {
+				return repos, nil
+			}
+		}
+	}
+}
 
+func (c *Client) fetchForks() (string, map[string]forkFacts, error) {
+	var viewer string
+	forks := map[string]forkFacts{}
+	var cursor *string
+	for {
+		var resp forksResponse
+		if err := c.gql.Do(forksQuery, map[string]interface{}{"cursor": cursor}, &resp); err != nil {
+			return "", nil, err
+		}
+		viewer = resp.Viewer.Login
+		page := resp.Viewer.Repositories
+		for _, n := range page.Nodes {
+			forks[n.NameWithOwner] = forkFacts{parent: parentName(n.Parent), language: n.PrimaryLanguage.Name}
+		}
 		if !page.PageInfo.HasNextPage {
-			break
+			return viewer, forks, nil
 		}
 		end := page.PageInfo.EndCursor
 		cursor = &end
 	}
-
-	return dedupeRepos(repos), nil
 }
 
 func parentName(p *struct {

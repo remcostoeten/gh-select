@@ -1,86 +1,85 @@
 package gh
 
-import "time"
+import (
+	"fmt"
+	"strings"
+	"sync"
+)
 
-const starredQuery = `
-query($cursor: String) {
-  viewer {
-    login
-    starredRepositories(first: 100, after: $cursor, orderBy: {field: STARRED_AT, direction: DESC}) {
-      nodes {
-        nameWithOwner
-        description
-        isPrivate
-        stargazerCount
-        updatedAt
-        primaryLanguage { name }
-        owner { login }
-        isFork
-        parent { nameWithOwner }
-      }
-      pageInfo { hasNextPage endCursor }
-    }
-  }
-}`
-
-type starredResponse struct {
-	Viewer struct {
-		Login               string `json:"login"`
-		StarredRepositories struct {
-			Nodes []struct {
-				NameWithOwner   string    `json:"nameWithOwner"`
-				Description     string    `json:"description"`
-				IsPrivate       bool      `json:"isPrivate"`
-				StargazerCount  int       `json:"stargazerCount"`
-				UpdatedAt       time.Time `json:"updatedAt"`
-				PrimaryLanguage struct {
-					Name string `json:"name"`
-				} `json:"primaryLanguage"`
-				Owner struct {
-					Login string `json:"login"`
-				} `json:"owner"`
-				IsFork bool `json:"isFork"`
-				Parent *struct {
-					NameWithOwner string `json:"nameWithOwner"`
-				} `json:"parent"`
-			} `json:"nodes"`
-			PageInfo struct {
-				HasNextPage bool   `json:"hasNextPage"`
-				EndCursor   string `json:"endCursor"`
-			} `json:"pageInfo"`
-		} `json:"starredRepositories"`
-	} `json:"viewer"`
-}
+// forkBatch is how many repositories one aliased GraphQL lookup asks about.
+const forkBatch = 100
 
 // FetchStarred returns every repository the authenticated user has starred,
-// most recently starred first.
+// most recently starred first. The REST pages load concurrently with the
+// viewer's login; starred forks then get their parent and language, which the
+// REST listing leaves out, in one batched lookup.
 func (c *Client) FetchStarred() ([]Repo, error) {
-	var repos []Repo
-	var cursor *string
-	for {
-		var resp starredResponse
-		if err := c.gql.Do(starredQuery, map[string]interface{}{"cursor": cursor}, &resp); err != nil {
+	var (
+		wg        sync.WaitGroup
+		viewer    string
+		viewerErr error
+	)
+	wg.Go(func() { viewer, viewerErr = c.viewerLogin() })
+	repos, err := c.fetchRepoPages(starredPath)
+	wg.Wait()
+	if err != nil {
+		return nil, err
+	}
+	if viewerErr != nil {
+		return nil, viewerErr
+	}
+	forks, err := c.lookupForks(repos)
+	if err != nil {
+		return nil, err
+	}
+	return mergeForks(repos, viewer, forks), nil
+}
+
+func (c *Client) viewerLogin() (string, error) {
+	var user struct {
+		Login string `json:"login"`
+	}
+	err := c.rest.Get("user", &user)
+	return user.Login, err
+}
+
+type forkNode struct {
+	NameWithOwner string `json:"nameWithOwner"`
+	Parent        *struct {
+		NameWithOwner string `json:"nameWithOwner"`
+	} `json:"parent"`
+	PrimaryLanguage struct {
+		Name string `json:"name"`
+	} `json:"primaryLanguage"`
+}
+
+// lookupForks fetches the parent and language of every fork in repos with
+// one aliased query per forkBatch forks.
+func (c *Client) lookupForks(repos []Repo) (map[string]forkFacts, error) {
+	var names []string
+	for _, r := range repos {
+		if r.IsFork {
+			names = append(names, r.NameWithOwner)
+		}
+	}
+	forks := map[string]forkFacts{}
+	for start := 0; start < len(names); start += forkBatch {
+		var q strings.Builder
+		q.WriteString("query {")
+		for i, name := range names[start:min(start+forkBatch, len(names))] {
+			owner, repo, _ := strings.Cut(name, "/")
+			fmt.Fprintf(&q, " r%d: repository(owner: %q, name: %q) { nameWithOwner parent { nameWithOwner } primaryLanguage { name } }", i, owner, repo)
+		}
+		q.WriteString(" }")
+		var resp map[string]*forkNode
+		if err := c.gql.Do(q.String(), nil, &resp); err != nil {
 			return nil, err
 		}
-		page := resp.Viewer.StarredRepositories
-		for _, n := range page.Nodes {
-			repos = append(repos, Repo{
-				NameWithOwner:  n.NameWithOwner,
-				Description:    n.Description,
-				IsPrivate:      n.IsPrivate,
-				StargazerCount: n.StargazerCount,
-				UpdatedAt:      n.UpdatedAt,
-				Language:       n.PrimaryLanguage.Name,
-				OwnerLogin:     n.Owner.Login,
-				IsOwner:        n.Owner.Login == resp.Viewer.Login,
-				IsFork:         n.IsFork,
-				Parent:         parentName(n.Parent),
-			})
+		for _, n := range resp {
+			if n != nil {
+				forks[n.NameWithOwner] = forkFacts{parent: parentName(n.Parent), language: n.PrimaryLanguage.Name}
+			}
 		}
-		if !page.PageInfo.HasNextPage {
-			return repos, nil
-		}
-		end := page.PageInfo.EndCursor
-		cursor = &end
 	}
+	return forks, nil
 }

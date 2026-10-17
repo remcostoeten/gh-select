@@ -103,3 +103,13 @@ func (c *Client) OpenAsset(a Asset) (io.ReadCloser, int64, error) {
 	}
 	return resp.Body, resp.ContentLength, nil
 }
+
+// FetchLatestRelease returns the repository's newest published release,
+// skipping drafts and prereleases like GitHub's "latest" link does.
+func (c *Client) FetchLatestRelease(nameWithOwner string) (Release, error) {
+	var release Release
+	if err := c.rest.Get(fmt.Sprintf("repos/%s/releases/latest", nameWithOwner), &release); err != nil {
+		return Release{}, err
+	}
+	return release, nil
+}

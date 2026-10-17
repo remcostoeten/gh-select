@@ -25,6 +25,14 @@ type restRepo struct {
 	Owner           struct {
 		Login string `json:"login"`
 	} `json:"owner"`
+	PushedAt time.Time    `json:"pushed_at"`
+	Archived bool         `json:"archived"`
+	License  *restLicense `json:"license"`
+	Size     int          `json:"size"`
+}
+
+type restLicense struct {
+	SpdxID string `json:"spdx_id"`
 }
 
 func (r restRepo) toRepo() Repo {
@@ -37,7 +45,18 @@ func (r restRepo) toRepo() Repo {
 		Language:       r.Language,
 		OwnerLogin:     r.Owner.Login,
 		IsFork:         r.Fork,
+		PushedAt:       r.PushedAt,
+		IsArchived:     r.Archived,
+		License:        r.licenseID(),
+		DiskKB:         r.Size,
 	}
+}
+
+func (r restRepo) licenseID() string {
+	if r.License == nil {
+		return ""
+	}
+	return r.License.SpdxID
 }
 
 // searchLimit caps results to a single page — one request per query keeps the

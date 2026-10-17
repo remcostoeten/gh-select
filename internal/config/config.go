@@ -11,34 +11,36 @@ import (
 
 // Config is the resolved runtime configuration for a single invocation.
 type Config struct {
-	CacheDir    string        // directory holding cached repo data
-	CacheTTL    time.Duration // how long cached data is considered fresh
-	CloneDir    string        // where clones land (empty = current directory)
-	DownloadDir string        // where release assets land (empty = current directory)
-	ScanDirs    []string      // extra directories searched for local clones
-	NoColor     bool          // disable ANSI styling
-	Theme       string        // UI color theme name from GH_SELECT_THEME (empty = unset)
-	SavedTheme  string        // theme last picked with ctrl+t (empty = none)
-	Border      string        // panel border style name (empty = default)
-	Icons       string        // icon set name (empty = default)
-	Transparent bool          // don't paint the app background
+	CacheDir      string        // directory holding cached repo data
+	CacheTTL      time.Duration // how long cached data is considered fresh
+	CloneDir      string        // where clones land (empty = current directory)
+	DownloadDir   string        // where release assets land (empty = current directory)
+	ScanDirs      []string      // extra directories searched for local clones
+	NoColor       bool          // disable ANSI styling
+	Theme         string        // UI color theme name from GH_SELECT_THEME (empty = unset)
+	SavedTheme    string        // theme last picked with ctrl+t (empty = none)
+	Border        string        // panel border style name (empty = default)
+	Icons         string        // icon set name (empty = default)
+	Transparent   bool          // don't paint the app background
+	NoUpdateCheck bool          // skip the daily check for a newer release
 }
 
 // Load resolves configuration from environment variables, applying defaults
 // that mirror the original shell implementation.
 func Load() Config {
 	return Config{
-		CacheDir:    cacheDir(),
-		CacheTTL:    cacheTTL(),
-		CloneDir:    ExpandHome(os.Getenv("GH_SELECT_CLONE_DIR")),
-		DownloadDir: ExpandHome(os.Getenv("GH_SELECT_DOWNLOAD_DIR")),
-		ScanDirs:    scanDirs(),
-		NoColor:     os.Getenv("NO_COLOR") != "",
-		Theme:       os.Getenv("GH_SELECT_THEME"),
-		SavedTheme:  savedTheme(),
-		Border:      os.Getenv("GH_SELECT_BORDER"),
-		Icons:       os.Getenv("GH_SELECT_ICONS"),
-		Transparent: os.Getenv("GH_SELECT_TRANSPARENT") != "",
+		CacheDir:      cacheDir(),
+		CacheTTL:      cacheTTL(),
+		CloneDir:      ExpandHome(os.Getenv("GH_SELECT_CLONE_DIR")),
+		DownloadDir:   ExpandHome(os.Getenv("GH_SELECT_DOWNLOAD_DIR")),
+		ScanDirs:      scanDirs(),
+		NoColor:       os.Getenv("NO_COLOR") != "",
+		Theme:         os.Getenv("GH_SELECT_THEME"),
+		SavedTheme:    savedTheme(),
+		Border:        os.Getenv("GH_SELECT_BORDER"),
+		Icons:         os.Getenv("GH_SELECT_ICONS"),
+		Transparent:   os.Getenv("GH_SELECT_TRANSPARENT") != "",
+		NoUpdateCheck: os.Getenv("GH_SELECT_NO_UPDATE_CHECK") != "" || os.Getenv("CI") != "",
 	}
 }
 

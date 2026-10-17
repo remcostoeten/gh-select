@@ -150,7 +150,7 @@ var themes = map[string]palette{
 
 var activeTheme = defaultTheme
 
-const defaultTheme = "catppuccin"
+const defaultTheme = "gruvbox"
 
 // borders maps a selectable name to the chrome's box border style.
 var borders = map[string]lipgloss.Border{
@@ -212,8 +212,35 @@ func cycleTheme() string {
 	return next
 }
 
+var activeBorder = defaultBorder
+
+// cycleBorder switches to the border style after the active one, in name
+// order, and returns its name.
+func cycleBorder() string {
+	names := BorderNames()
+	next := names[0]
+	for i, n := range names {
+		if n == activeBorder {
+			next = names[(i+1)%len(names)]
+			break
+		}
+	}
+	_ = SetBorder(next)
+	return next
+}
+
+// toggleIcons flips between Nerd Font glyphs and text tags and returns the
+// name of the set now in use.
+func toggleIcons() string {
+	nerdIcons = !nerdIcons
+	if nerdIcons {
+		return "nerd"
+	}
+	return "none"
+}
+
 // themeFile is the JSON shape of a custom theme. Colors missing from dark or
-// light fall back to the theme named in extends (catppuccin when empty).
+// light fall back to the theme named in extends (gruvbox when empty).
 type themeFile struct {
 	Extends string            `json:"extends"`
 	Dark    map[string]string `json:"dark"`
@@ -355,6 +382,7 @@ const (
 	iconPrivate = "\uf456" // nf-oct-lock
 	iconFork    = "\uf402" // nf-oct-repo_forked
 	iconLocal   = "\uf413" // nf-oct-file_directory
+	iconArchive = "\uf411" // nf-oct-archive
 	iconStar    = "\uf41e" // nf-oct-star
 )
 
@@ -369,6 +397,7 @@ func SetBorder(name string) error {
 		return fmt.Errorf("unknown border %q (valid: %s)", name, strings.Join(BorderNames(), ", "))
 	}
 	chromeBorder = b
+	activeBorder = strings.ToLower(name)
 	frameless = strings.ToLower(name) == "none"
 	return nil
 }
@@ -410,6 +439,9 @@ var (
 
 	keyStyle lipgloss.Style
 
+	// keycapStyle renders every key the UI names as a small tinted keycap.
+	keycapStyle lipgloss.Style
+
 	// Column titles and the labels of key/value detail rows.
 	columnStyle lipgloss.Style
 )
@@ -435,6 +467,7 @@ func applyPalette(p palette) {
 	errStyle = lipgloss.NewStyle().Foreground(colRed).Bold(true)
 	markedStyle = lipgloss.NewStyle().Foreground(colGreen)
 	keyStyle = lipgloss.NewStyle().Foreground(colCyan).Bold(true)
+	keycapStyle = lipgloss.NewStyle().Foreground(colCyan).Background(colSel).Bold(true).Padding(0, 1)
 	columnStyle = lipgloss.NewStyle().Foreground(colHL).Bold(true)
 }
 

@@ -12,7 +12,7 @@ import (
 var queryRepos = []gh.Repo{
 	{NameWithOwner: "me/alpha", Language: "Go", StargazerCount: 5, IsOwner: true},
 	{NameWithOwner: "me/beta", Language: "TypeScript", StargazerCount: 50, IsPrivate: true, IsOwner: true},
-	{NameWithOwner: "org/gamma", Language: "Go", StargazerCount: 500},
+	{NameWithOwner: "org/gamma", Language: "Go", StargazerCount: 500, IsArchived: true},
 }
 
 func repoNames(items []list.Item) string {
@@ -34,6 +34,8 @@ func TestFilterTokens(t *testing.T) {
 		"is:public lang:go":   "alpha,gamma",
 		"is:local":            "gamma",
 		"is:mine lang:go":     "alpha",
+		"is:archived":         "gamma",
+		"is:active lang:go":   "alpha",
 		"is:bogus":            "",
 	}
 	for q, want := range cases {
@@ -45,6 +47,9 @@ func TestFilterTokens(t *testing.T) {
 
 func TestGitHubQueryTranslation(t *testing.T) {
 	if got := githubQuery("cli lang:go is:private is:local"); got != "cli language:go is:private" {
+		t.Errorf("githubQuery = %q", got)
+	}
+	if got := githubQuery("cli is:active"); got != "cli archived:false" {
 		t.Errorf("githubQuery = %q", got)
 	}
 }

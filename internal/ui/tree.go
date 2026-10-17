@@ -715,9 +715,9 @@ func highlight(path, source string) string {
 	if formatter == nil {
 		formatter = formatters.Fallback
 	}
-	styleName := "catppuccin-mocha"
+	styleName := "gruvbox"
 	if !lipgloss.HasDarkBackground() {
-		styleName = "catppuccin-latte"
+		styleName = "gruvbox-light"
 	}
 	style := styles.Get(styleName)
 	if style == nil {

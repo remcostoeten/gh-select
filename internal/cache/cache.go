@@ -21,7 +21,7 @@ type Cache struct {
 
 // schema versions the cache files, so a release that adds repo fields
 // refetches once instead of trusting a fresh cache that lacks them.
-const schema = "-v2"
+const schema = "-v3"
 
 // New returns a Cache rooted at dir with the given freshness window.
 func New(dir string, ttl time.Duration) *Cache {

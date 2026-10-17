@@ -49,6 +49,7 @@ Filter tokens work in every list and combine with text, as in `cli lang:go is:mi
 | `is:fork`, `is:source` | forks or original repos |
 | `is:local` | repos you have cloned |
 | `is:mine` | repos you own |
+| `is:archived`, `is:active` | archived or active repos |
 
 ### Browse and partial clone
 
@@ -91,7 +92,7 @@ Existing clones are found anywhere under your home directory, including git work
 
 ### Themes
 
-Built in: `catppuccin` (default), `dracula`, `everforest`, `graphite`, `gruvbox`, `kanagawa`, `nord`, `rose-pine`, `solarized` and `tokyonight`, each with a light and dark variant picked from the terminal background. Set one with `--theme NAME` or `GH_SELECT_THEME`, or press `ctrl+t`, which saves the choice to `~/.config/gh-select/theme`.
+Built in: `gruvbox` (default), `catppuccin`, `dracula`, `everforest`, `graphite`, `kanagawa`, `nord`, `rose-pine`, `solarized` and `tokyonight`, each with a light and dark variant picked from the terminal background. Set one with `--theme NAME` or `GH_SELECT_THEME`, or press `ctrl+t`, which saves the choice to `~/.config/gh-select/theme`.
 
 A custom theme is a JSON file in `~/.config/gh-select/themes/`, named after the theme. Colors left out come from the theme in `extends`, which can be built in or custom:
 
@@ -103,7 +104,7 @@ A custom theme is a JSON file in `~/.config/gh-select/themes/`, named after the 
 }
 ```
 
-The colors are `bg`, `fg`, `dim`, `hl`, `cyan`, `blue`, `green`, `pink`, `yellow` and `red`, each as `#rrggbb`. `--border` adds boxes around panels, `--transparent` keeps the terminal background, and `--icons none` replaces the [Nerd Font](https://www.nerdfonts.com) icons with words.
+The colors are `bg`, `fg`, `dim`, `hl`, `cyan`, `blue`, `green`, `pink`, `yellow` and `red`, each as `#rrggbb`. `--border` adds boxes around panels, `--transparent` keeps the terminal background, and `--icons none` replaces the [Nerd Font](https://www.nerdfonts.com) icons with words. `ctrl+g` cycles the border style and `ctrl+o` toggles icons for the current session.
 
 ### Commands and options
 
@@ -133,6 +134,8 @@ Needs [GitHub CLI](https://cli.github.com/) logged in with `gh auth login`, and 
 gh extension install remcostoeten/gh-select
 gh extension upgrade gh-select
 ```
+
+Once a day the app asks GitHub for the latest release. When there is a newer one, the header says so next to the version, with the upgrade command, and `gh select version` repeats it on stderr. Set `GH_SELECT_NO_UPDATE_CHECK=1` to turn the check off. It is also off when `CI` is set and for local builds.
 
 ### Standalone binary
 

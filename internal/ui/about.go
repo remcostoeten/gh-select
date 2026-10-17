@@ -19,6 +19,8 @@ type buildMeta struct {
 	version string
 	commit  string
 	updated time.Time
+	latest  string // a newer release tag, once the update check found one
+	hint    string // how to install it
 }
 
 // SetBuild records the commit and commit time the binary was built from, shown
@@ -28,25 +30,44 @@ func (a *App) SetBuild(commit string, updated time.Time) {
 	a.meta.updated = updated
 }
 
-// header lays the app name, version, author, source, last update and commit on
-// the left and the screen context on the right. The context always fits;
-// the build details drop out from the end, down to the name and version, when
-// w is too narrow for all of them.
+// SetUpdateCheck installs the check run in the background on start. It returns
+// the newer release tag and the upgrade instruction, or "" when up to date.
+func (a *App) SetUpdateCheck(check func() (tag, hint string)) {
+	a.updateCheck = check
+}
+
+type updateAvailableMsg struct{ tag, hint string }
+
+func (a *App) updateCheckCmd() tea.Cmd {
+	if a.updateCheck == nil {
+		return nil
+	}
+	check := a.updateCheck
+	return func() tea.Msg {
+		tag, hint := check()
+		return updateAvailableMsg{tag: tag, hint: hint}
+	}
+}
+
+// updateNotice is the "v2.6.0 available · gh extension upgrade gh-select"
+// fragment, empty while nothing newer is known.
+func (m buildMeta) updateNotice() string {
+	if m.latest == "" {
+		return ""
+	}
+	return markedStyle.Render(m.latest+" available") + dimStyle.Render(hintSep+m.hint)
+}
+
+// header lays the app name, version and any update notice on the left and the
+// screen context on the right; the credit row at the bottom carries the
+// author, source and build. The notice drops out when w is too narrow for it.
 func (m buildMeta) header(context string, w int) string {
 	name := appStyle.Render("gh-select") + " " + dimStyle.Render(m.version)
-	extras := []string{"by " + appAuthor, appSource}
-	if !m.updated.IsZero() {
-		extras = append(extras, "updated "+m.updated.Local().Format("2 Jan 2006"))
-	}
-	if m.commit != "" && !strings.Contains(m.version, m.commit) {
-		extras = append(extras, m.commit)
-	}
 	right := contextStyle.Render(context)
-	room := w - lipgloss.Width(right) - 2
-	for n := len(extras); n > 0; n-- {
-		left := name + dimStyle.Render(hintSep+strings.Join(extras[:n], hintSep))
-		if lipgloss.Width(left) <= room {
-			return justify(left, right, w)
+	if notice := m.updateNotice(); notice != "" {
+		withNotice := name + dimStyle.Render(hintSep) + notice
+		if lipgloss.Width(withNotice) <= w-lipgloss.Width(right)-2 {
+			name = withNotice
 		}
 	}
 	return justify(name, right, w)
@@ -88,7 +109,11 @@ func (m buildMeta) creditsBody() string {
 	if !m.updated.IsZero() {
 		build = append(build, "updated "+m.updated.Local().Format("2 Jan 2006"))
 	}
-	b.WriteString("   " + dimStyle.Render(strings.Join(build, hintSep)) + "\n\n")
+	b.WriteString("   " + dimStyle.Render(strings.Join(build, hintSep)) + "\n")
+	if notice := m.updateNotice(); notice != "" {
+		b.WriteString("   " + notice + "\n")
+	}
+	b.WriteString("\n")
 	links := m.creditLinks()
 	labelW := 0
 	for _, l := range links {
@@ -96,7 +121,7 @@ func (m buildMeta) creditsBody() string {
 	}
 	for _, l := range links {
 		pad := strings.Repeat(" ", labelW-lipgloss.Width(l.label)+3)
-		b.WriteString("   " + keyStyle.Render(l.key) + "   " + dimStyle.Render(l.label) + pad + statusStyle.Render(strings.TrimPrefix(l.url, "https://")) + "\n")
+		b.WriteString("   " + keycapStyle.Render(l.key) + "   " + dimStyle.Render(l.label) + pad + statusStyle.Render(strings.TrimPrefix(l.url, "https://")) + "\n")
 	}
 	b.WriteString("\n   " + dimStyle.Render("press a key to open the link in your browser") + "\n")
 	return b.String()

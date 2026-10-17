@@ -14,7 +14,7 @@ import (
 // SetBorder, with the focused panel's title highlighted. The whole layout is
 // centered and capped at maxContentWidth so it doesn't stretch thin across
 // very wide terminals.
-const chromeLines = 5 // header (1) + blank (1) + status line (1) + rule (1) + footer (1)
+const chromeLines = 6 // header (1) + blank (1) + status line (1) + rule (1) + footer (1) + credit (1)
 
 // maxContentWidth caps how wide the layout grows; anything wider is margin.
 const maxContentWidth = 118
@@ -265,8 +265,33 @@ func compose(width, height int, meta buildMeta, context, body, status, keys stri
 		fitHeight(body, innerH) + "\n" +
 		statusLine + "\n" +
 		" " + dimStyle.Render(strings.Repeat("─", max(cw-2, 0))) + "\n" +
-		edge + fitHints(keys, cw-4)
+		edge + fitHints(keys, cw-4) + "\n" +
+		meta.creditLine(cw)
 	return indent(out, contentPad(width))
+}
+
+// creditLine is the author credit, source and build on their own row under
+// the key hints, flush with the hints above it. Items drop from the end when
+// the column is too narrow for all of them.
+func (m buildMeta) creditLine(w int) string {
+	parts := []string{
+		dimStyle.Render("made by ") + lipgloss.NewStyle().Foreground(colFg).Render(appAuthor),
+		statusStyle.Render("remcostoeten.nl"),
+		statusStyle.Render(appSource),
+	}
+	if !m.updated.IsZero() {
+		parts = append(parts, dimStyle.Render("updated "+m.updated.Local().Format("2 Jan 2006")))
+	}
+	if m.commit != "" && !strings.Contains(m.version, m.commit) {
+		parts = append(parts, dimStyle.Render(m.commit))
+	}
+	for n := len(parts); n > 0; n-- {
+		credit := strings.Join(parts[:n], dimStyle.Render(hintSep))
+		if lipgloss.Width(credit) <= w-4 {
+			return "  " + credit
+		}
+	}
+	return ""
 }
 
 // fitHeight truncates or blank-pads body to exactly n rows.
@@ -288,7 +313,7 @@ const hintSep = " · "
 func keyHint(pairs ...[2]string) string {
 	parts := make([]string, 0, len(pairs))
 	for _, p := range pairs {
-		parts = append(parts, keyStyle.Render(p[0])+" "+dimStyle.Render(p[1]))
+		parts = append(parts, keycapStyle.Render(p[0])+" "+dimStyle.Render(p[1]))
 	}
 	return strings.Join(parts, dimStyle.Render(hintSep))
 }
@@ -322,7 +347,7 @@ func helpBody(title string, rows [][2]string) string {
 			continue
 		}
 		pad := strings.Repeat(" ", keyW-lipgloss.Width(r[0])+3)
-		b.WriteString("   " + keyStyle.Render(r[0]) + pad + dimStyle.Render(r[1]) + "\n")
+		b.WriteString("   " + keycapStyle.Render(r[0]) + pad + dimStyle.Render(r[1]) + "\n")
 	}
 	return b.String()
 }
