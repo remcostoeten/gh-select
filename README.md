@@ -49,6 +49,7 @@ Filter tokens work in every list and combine with text, as in `cli lang:go is:mi
 | `is:fork`, `is:source` | forks or original repos |
 | `is:local` | repos you have cloned |
 | `is:mine` | repos you own |
+| `is:archived`, `is:active` | archived or active repos |
 
 ### Browse and partial clone
 
@@ -103,7 +104,7 @@ A custom theme is a JSON file in `~/.config/gh-select/themes/`, named after the 
 }
 ```
 
-The colors are `bg`, `fg`, `dim`, `hl`, `cyan`, `blue`, `green`, `pink`, `yellow` and `red`, each as `#rrggbb`. `--border` adds boxes around panels, `--transparent` keeps the terminal background, and `--icons none` replaces the [Nerd Font](https://www.nerdfonts.com) icons with words.
+The colors are `bg`, `fg`, `dim`, `hl`, `cyan`, `blue`, `green`, `pink`, `yellow` and `red`, each as `#rrggbb`. `--border` adds boxes around panels, `--transparent` keeps the terminal background, and `--icons none` replaces the [Nerd Font](https://www.nerdfonts.com) icons with words. `ctrl+g` cycles the border style and `ctrl+o` toggles icons for the current session.
 
 ### Commands and options
 
