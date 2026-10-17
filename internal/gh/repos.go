@@ -48,13 +48,15 @@ func (r Repo) Name() string {
 	return r.NameWithOwner
 }
 
-// reposPerPage is the REST maximum page size, and reposWave how many pages
-// are requested at once. GraphQL can only page by cursor, one round-trip after
-// another; numbered REST pages can be fetched side by side.
+// reposPerPage and reposWave size the concurrent REST page requests: GraphQL
+// can only page by cursor, one round-trip after another, while numbered REST
+// pages can be fetched side by side. Half-size pages come back faster than
+// full ones, and one wave covers 400 repos.
 const (
-	reposPerPage = 100
-	reposWave    = 4
+	reposPerPage = 50
+	reposWave    = 8
 	reposPath    = "user/repos?affiliation=owner,collaborator,organization_member&sort=updated"
+	starredPath  = "user/starred?sort=created&direction=desc"
 )
 
 // forksQuery reads the viewer's login and the parent and language of every
@@ -82,15 +84,7 @@ type forksResponse struct {
 	Viewer struct {
 		Login        string `json:"login"`
 		Repositories struct {
-			Nodes []struct {
-				NameWithOwner string `json:"nameWithOwner"`
-				Parent        *struct {
-					NameWithOwner string `json:"nameWithOwner"`
-				} `json:"parent"`
-				PrimaryLanguage struct {
-					Name string `json:"name"`
-				} `json:"primaryLanguage"`
-			} `json:"nodes"`
+			Nodes    []forkNode `json:"nodes"`
 			PageInfo struct {
 				HasNextPage bool   `json:"hasNextPage"`
 				EndCursor   string `json:"endCursor"`
@@ -111,7 +105,7 @@ func (c *Client) FetchRepos() ([]Repo, error) {
 		forkErr error
 	)
 	wg.Go(func() { viewer, forks, forkErr = c.fetchForks() })
-	repos, err := c.fetchRepoPages()
+	repos, err := c.fetchRepoPages(reposPath)
 	wg.Wait()
 	if err != nil {
 		return nil, err
@@ -119,6 +113,10 @@ func (c *Client) FetchRepos() ([]Repo, error) {
 	if forkErr != nil {
 		return nil, forkErr
 	}
+	return mergeForks(repos, viewer, forks), nil
+}
+
+func mergeForks(repos []Repo, viewer string, forks map[string]forkFacts) []Repo {
 	for i := range repos {
 		repos[i].IsOwner = repos[i].OwnerLogin == viewer
 		if f, ok := forks[repos[i].NameWithOwner]; ok {
@@ -128,12 +126,12 @@ func (c *Client) FetchRepos() ([]Repo, error) {
 			}
 		}
 	}
-	return dedupeRepos(repos), nil
+	return dedupeRepos(repos)
 }
 
-// fetchRepoPages requests reposWave pages at a time until one comes back
-// short, keeping the pages in order.
-func (c *Client) fetchRepoPages() ([]Repo, error) {
+// fetchRepoPages requests reposWave pages of a REST repo listing at a time
+// until one comes back short, keeping the pages in order.
+func (c *Client) fetchRepoPages(listing string) ([]Repo, error) {
 	var repos []Repo
 	for first := 1; ; first += reposWave {
 		pages := make([][]restRepo, reposWave)
@@ -141,7 +139,7 @@ func (c *Client) fetchRepoPages() ([]Repo, error) {
 		var wg sync.WaitGroup
 		for i := range pages {
 			wg.Go(func() {
-				path := fmt.Sprintf("%s&per_page=%d&page=%d", reposPath, reposPerPage, first+i)
+				path := fmt.Sprintf("%s&per_page=%d&page=%d", listing, reposPerPage, first+i)
 				errs[i] = c.rest.Get(path, &pages[i])
 			})
 		}
@@ -189,17 +187,6 @@ func parentName(p *struct {
 		return ""
 	}
 	return p.NameWithOwner
-}
-
-type licenseInfo struct {
-	SpdxID string `json:"spdxId"`
-}
-
-func (l *licenseInfo) id() string {
-	if l == nil {
-		return ""
-	}
-	return l.SpdxID
 }
 
 // dedupeRepos drops repeated NameWithOwner entries, keeping the first occurrence

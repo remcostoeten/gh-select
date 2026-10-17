@@ -13,6 +13,17 @@ All notable changes to gh-select are documented here.
   `GH_SELECT_NO_UPDATE_CHECK=1` or `CI` turns the check off; local builds
   never check.
 
+### Changed
+- **Faster repo list.** Your repos and stars load as parallel REST pages
+  instead of one GraphQL page after another: 300 repos take about 1s instead
+  of 6.6s, and 93 stars about 1s instead of 2.8s. Fork parents and languages,
+  which the REST listing leaves out, come from one small GraphQL lookup.
+- **Smoother scrolling.** Column widths are measured once per result set
+  instead of once per visible row, which cut a keypress from about 18ms of
+  rendering to 0.3ms with 300 repos.
+- **Quicker start.** The GitHub token is read once instead of once per API
+  client, saving about 100ms before the first frame.
+
 ## [2.5.0] - 2026-10-03
 
 ### Added

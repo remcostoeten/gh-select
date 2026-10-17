@@ -116,3 +116,37 @@ func TestFetchReposPagesAndMergesForks(t *testing.T) {
 		t.Errorf("requested pages %v, want one wave of %d", pages, reposWave)
 	}
 }
+
+func TestFetchStarredLooksUpForks(t *testing.T) {
+	var queries []string
+	var mu sync.Mutex
+	client := fakeClient(t, func(r *http.Request) (int, string) {
+		switch {
+		case r.URL.Path == "/graphql":
+			body, _ := io.ReadAll(r.Body)
+			mu.Lock()
+			queries = append(queries, string(body))
+			mu.Unlock()
+			return 200, `{"data":{"r0":{"nameWithOwner":"them/fork","parent":{"nameWithOwner":"up/fork"},"primaryLanguage":{"name":"Rust"}}}}`
+		case r.URL.Path == "/user":
+			return 200, `{"login":"me"}`
+		case r.URL.Query().Get("page") == "1":
+			return 200, `[{"full_name":"me/mine","owner":{"login":"me"}},{"full_name":"them/fork","owner":{"login":"them"},"fork":true}]`
+		}
+		return 200, `[]`
+	})
+
+	repos, err := client.FetchStarred()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repos) != 2 || !repos[0].IsOwner || repos[1].IsOwner {
+		t.Fatalf("starred = %+v", repos)
+	}
+	if fork := repos[1]; fork.Parent != "up/fork" || fork.Language != "Rust" {
+		t.Errorf("fork not merged: %+v", fork)
+	}
+	if len(queries) != 1 || !strings.Contains(queries[0], `repository(owner: \"them\", name: \"fork\")`) {
+		t.Errorf("fork lookup queries = %v", queries)
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/cli/go-gh/v2/pkg/api"
+	"github.com/cli/go-gh/v2/pkg/auth"
 )
 
 // Client bundles the REST, GraphQL and raw HTTP clients, both authenticated with the
@@ -19,16 +20,25 @@ type Client struct {
 
 // NewClient builds API clients from the active gh authentication. It returns a
 // helpful error when the user is not logged in.
+//
+// The token is resolved once and shared: each api.Default*Client looks it up
+// on its own, which can mean a keyring read per client.
 func NewClient() (*Client, error) {
-	rest, err := api.DefaultRESTClient()
+	host, _ := auth.DefaultHost()
+	token, _ := auth.TokenForHost(host)
+	if token == "" {
+		return nil, authError(fmt.Errorf("authentication token not found for host %s", host))
+	}
+	opts := api.ClientOptions{Host: host, AuthToken: token}
+	rest, err := api.NewRESTClient(opts)
 	if err != nil {
 		return nil, authError(err)
 	}
-	gql, err := api.DefaultGraphQLClient()
+	gql, err := api.NewGraphQLClient(opts)
 	if err != nil {
 		return nil, authError(err)
 	}
-	httpClient, err := api.DefaultHTTPClient()
+	httpClient, err := api.NewHTTPClient(opts)
 	if err != nil {
 		return nil, authError(err)
 	}
