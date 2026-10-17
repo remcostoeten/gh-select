@@ -31,7 +31,7 @@ func sortCycle(s searchScope) []sortOrder {
 func sortLabel(o sortOrder, s searchScope) string {
 	switch o {
 	case sortUpdated:
-		return "updated"
+		return "pushed"
 	case sortStars:
 		return "stars"
 	case sortName:
@@ -59,7 +59,7 @@ func nextSort(o sortOrder, s searchScope) sortOrder {
 func sortRepos(repos []gh.Repo, o sortOrder) {
 	switch o {
 	case sortUpdated:
-		sort.SliceStable(repos, func(i, j int) bool { return repos[i].UpdatedAt.After(repos[j].UpdatedAt) })
+		sort.SliceStable(repos, func(i, j int) bool { return repos[i].LastActivity().After(repos[j].LastActivity()) })
 	case sortStars:
 		sort.SliceStable(repos, func(i, j int) bool { return repos[i].StargazerCount > repos[j].StargazerCount })
 	case sortName:
@@ -71,14 +71,16 @@ func sortRepos(repos []gh.Repo, o sortOrder) {
 
 // listQuery is the search text split into free text and filter tokens:
 // lang:go (or language:go), is:private, is:public, is:fork, is:source,
-// is:local and is:mine.
+// is:local, is:mine, is:archived and is:active.
 type listQuery struct {
 	text string
 	lang string
 	is   map[string]bool
 }
 
-var isFilters = map[string]bool{"private": true, "public": true, "fork": true, "source": true, "local": true, "mine": true}
+var isFilters = map[string]bool{
+	"private": true, "public": true, "fork": true, "source": true, "local": true, "mine": true, "archived": true, "active": true,
+}
 
 func parseQuery(q string) listQuery {
 	out := listQuery{is: map[string]bool{}}
@@ -103,7 +105,8 @@ func (q listQuery) matches(r gh.Repo, locals map[string]string) bool {
 		return false
 	}
 	if q.is["private"] && !r.IsPrivate || q.is["public"] && r.IsPrivate || q.is["mine"] && !r.IsOwner ||
-		q.is["fork"] && !r.IsFork || q.is["source"] && r.IsFork {
+		q.is["fork"] && !r.IsFork || q.is["source"] && r.IsFork ||
+		q.is["archived"] && !r.IsArchived || q.is["active"] && r.IsArchived {
 		return false
 	}
 	if _, cloned := locals[r.NameWithOwner]; q.is["local"] && !cloned {
@@ -133,6 +136,12 @@ func githubQuery(q string) string {
 		parts = append(parts, "fork:only")
 	case parsed.is["source"]:
 		parts = append(parts, "fork:false")
+	}
+	switch {
+	case parsed.is["archived"]:
+		parts = append(parts, "archived:true")
+	case parsed.is["active"]:
+		parts = append(parts, "archived:false")
 	}
 	return strings.Join(parts, " ")
 }

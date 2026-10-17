@@ -313,7 +313,7 @@ func printHelp(w *os.File) {
 	lines = append(lines, option("-d, --dir DIR", "clone into DIR instead of the current directory")...)
 	lines = append(lines, option("--download-dir DIR", "save release assets and files into DIR")...)
 	lines = append(lines, option("-p, --print-path", "print the picked repo's path, cloning it if needed")...)
-	lines = append(lines, option("--theme NAME", "color theme, catppuccin by default",
+	lines = append(lines, option("--theme NAME", "color theme, gruvbox by default",
 		wrap(strings.Join(ui.ThemeNames(), ", ")+", or a custom ~/.config/gh-select/themes/NAME.json."+
 			" ctrl+t in the app cycles them and saves the choice", 52)...)...)
 	lines = append(lines, option("--border NAME", "panel border, none by default", strings.Join(ui.BorderNames(), ", "))...)

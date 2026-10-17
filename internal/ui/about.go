@@ -58,28 +58,16 @@ func (m buildMeta) updateNotice() string {
 	return markedStyle.Render(m.latest+" available") + dimStyle.Render(hintSep+m.hint)
 }
 
-// header lays the app name, version, author, source, last update and commit on
-// the left and the screen context on the right. The context always fits;
-// the build details drop out from the end, down to the name and version, when
-// w is too narrow for all of them.
+// header lays the app name, version and any update notice on the left and the
+// screen context on the right; the credit row at the bottom carries the
+// author, source and build. The notice drops out when w is too narrow for it.
 func (m buildMeta) header(context string, w int) string {
 	name := appStyle.Render("gh-select") + " " + dimStyle.Render(m.version)
-	if notice := m.updateNotice(); notice != "" {
-		name += dimStyle.Render(hintSep) + notice
-	}
-	extras := []string{"by " + appAuthor, appSource}
-	if !m.updated.IsZero() {
-		extras = append(extras, "updated "+m.updated.Local().Format("2 Jan 2006"))
-	}
-	if m.commit != "" && !strings.Contains(m.version, m.commit) {
-		extras = append(extras, m.commit)
-	}
 	right := contextStyle.Render(context)
-	room := w - lipgloss.Width(right) - 2
-	for n := len(extras); n > 0; n-- {
-		left := name + dimStyle.Render(hintSep+strings.Join(extras[:n], hintSep))
-		if lipgloss.Width(left) <= room {
-			return justify(left, right, w)
+	if notice := m.updateNotice(); notice != "" {
+		withNotice := name + dimStyle.Render(hintSep) + notice
+		if lipgloss.Width(withNotice) <= w-lipgloss.Width(right)-2 {
+			name = withNotice
 		}
 	}
 	return justify(name, right, w)
@@ -133,7 +121,7 @@ func (m buildMeta) creditsBody() string {
 	}
 	for _, l := range links {
 		pad := strings.Repeat(" ", labelW-lipgloss.Width(l.label)+3)
-		b.WriteString("   " + keyStyle.Render(l.key) + "   " + dimStyle.Render(l.label) + pad + statusStyle.Render(strings.TrimPrefix(l.url, "https://")) + "\n")
+		b.WriteString("   " + keycapStyle.Render(l.key) + "   " + dimStyle.Render(l.label) + pad + statusStyle.Render(strings.TrimPrefix(l.url, "https://")) + "\n")
 	}
 	b.WriteString("\n   " + dimStyle.Render("press a key to open the link in your browser") + "\n")
 	return b.String()

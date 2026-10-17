@@ -172,7 +172,7 @@ func (a *App) actionsBody(includeSummary bool) string {
 			}
 		}
 		fmt.Fprintf(&b, "%s%s  %s%s   %s\n",
-			cursor, padLeft(keyStyle.Render(it.key), keyW), label, pad, hint)
+			cursor, padLeft(keycapStyle.Render(it.key), keyW+2), label, pad, hint)
 	}
 
 	return b.String()
@@ -185,6 +185,9 @@ func detailColumn(r gh.Repo, localPath string, w, h int) string {
 	if r.IsPrivate {
 		access = labeled(privateBadge, iconPrivate, "private")
 	}
+	if r.IsArchived {
+		access += dimStyle.Render(" · ") + labeled(dimStyle, iconArchive, "archived")
+	}
 	facts := []string{kv("Access", access)}
 	if r.IsFork {
 		facts = append(facts, kv("Origin", truncate(origin(r), inner-10)))
@@ -195,8 +198,12 @@ func detailColumn(r gh.Repo, localPath string, w, h int) string {
 	if r.StargazerCount > 0 {
 		facts = append(facts, kv("Stars", starLabel(r.StargazerCount)))
 	}
-	if !r.UpdatedAt.IsZero() {
-		facts = append(facts, kv("Updated", age(r.UpdatedAt, time.Now())))
+	if t := r.LastActivity(); !t.IsZero() {
+		facts = append(facts, kv("Pushed", age(t, time.Now())))
+	}
+	facts = append(facts, kv("License", licenseLabel(r.License)))
+	if r.DiskKB > 0 {
+		facts = append(facts, kv("Size", lipgloss.NewStyle().Foreground(colFg).Render(diskLabel(r.DiskKB))))
 	}
 	if localPath != "" {
 		facts = append(facts, kv("Local", publicBadge.Render(truncate(localPath, inner-10))))
@@ -227,7 +234,7 @@ func field(label, value string, labelW int) string {
 }
 
 // repoDetailLines is the height of the details block under the repo list.
-const repoDetailLines = 11
+const repoDetailLines = 9
 
 // repoDetailBlock lists the highlighted repo's facts as aligned key/value
 // rows under a hairline, or boxed in a panel when borders are on. r is nil
@@ -257,8 +264,16 @@ func repoDetailBlock(r *gh.Repo, langs []string, localPath string, localsKnown b
 		if r.StargazerCount > 0 {
 			stars = lipgloss.NewStyle().Foreground(colFg).Render(starLabel(r.StargazerCount))
 		}
-		if !r.UpdatedAt.IsZero() {
-			updated = lipgloss.NewStyle().Foreground(colFg).Render(age(r.UpdatedAt, time.Now()))
+		if t := r.LastActivity(); !t.IsZero() {
+			updated = lipgloss.NewStyle().Foreground(colFg).Render("pushed " + age(t, time.Now()))
+		}
+		origin := origin(*r)
+		if r.IsArchived {
+			origin += dimStyle.Render("  ·  ") + labeled(dimStyle, iconArchive, "archived")
+		}
+		license := licenseLabel(r.License)
+		if r.DiskKB > 0 {
+			license += dimStyle.Render("  ·  ") + lipgloss.NewStyle().Foreground(colFg).Render(diskLabel(r.DiskKB))
 		}
 		if !localsKnown {
 			local = dimStyle.Render("searching disk…")
@@ -273,11 +288,10 @@ func repoDetailBlock(r *gh.Repo, langs []string, localPath string, localsKnown b
 		rows = []string{
 			field("Repository", lipgloss.NewStyle().Foreground(colFg).Bold(true).Render(name), 10),
 			field("About", about, 10),
-			field("Access", access, 10),
-			field("Origin", origin(*r), 10),
+			field("Access", access+dimStyle.Render("  ·  ")+origin, 10),
 			field("Language", lang, 10),
-			field("Stars", stars, 10),
-			field("Updated", updated, 10),
+			field("Activity", stars+dimStyle.Render("  ·  ")+updated, 10),
+			field("License", license, 10),
 			field("URL", statusStyle.Render(r.URL()), 10),
 			field("Local", local, 10),
 		}
@@ -288,8 +302,8 @@ func repoDetailBlock(r *gh.Repo, langs []string, localPath string, localsKnown b
 	out := " " + dimStyle.Render(strings.Repeat("─", max(w-2, 0))) + " \n"
 	for i := 1; i < h; i++ {
 		line := ""
-		if i >= 2 && i-2 < len(rows) {
-			line = rows[i-2]
+		if i-1 < len(rows) {
+			line = rows[i-1]
 		}
 		out += padRight("  "+truncate(line, w-4), w)
 		if i < h-1 {
@@ -309,6 +323,20 @@ func origin(r gh.Repo) string {
 		return labeled(forkBadge, iconFork, "fork")
 	}
 	return dimStyle.Render("original")
+}
+
+func licenseLabel(id string) string {
+	switch id {
+	case "":
+		return dimStyle.Render("none")
+	case "NOASSERTION":
+		return lipgloss.NewStyle().Foreground(colFg).Render("other")
+	}
+	return lipgloss.NewStyle().Foreground(colFg).Render(id)
+}
+
+func diskLabel(kb int) string {
+	return HumanSize(int64(kb) * 1024)
 }
 
 // repoMeta renders the visibility badge plus language and star count.

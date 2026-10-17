@@ -72,7 +72,7 @@ func (a *App) toggleMark() (tea.Model, tea.Cmd) {
 	}
 	if n := len(a.marked); n > 0 {
 		a.markNote += dimStyle.Render(" · ") + errStyle.UnsetBold().Render(plural(n, "repo", "repos")+" queued") +
-			dimStyle.Render(" · press ") + keyStyle.Render("^d") + dimStyle.Render(" to review")
+			dimStyle.Render(" · press ") + keycapStyle.Render("^d") + dimStyle.Render(" to review")
 	}
 	a.status = ""
 	return a, nil

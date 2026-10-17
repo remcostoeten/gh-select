@@ -17,6 +17,10 @@ query($cursor: String) {
         owner { login }
         isFork
         parent { nameWithOwner }
+        pushedAt
+        isArchived
+        licenseInfo { spdxId }
+        diskUsage
       }
       pageInfo { hasNextPage endCursor }
     }
@@ -43,6 +47,10 @@ type starredResponse struct {
 				Parent *struct {
 					NameWithOwner string `json:"nameWithOwner"`
 				} `json:"parent"`
+				PushedAt    time.Time    `json:"pushedAt"`
+				IsArchived  bool         `json:"isArchived"`
+				LicenseInfo *licenseInfo `json:"licenseInfo"`
+				DiskUsage   int          `json:"diskUsage"`
 			} `json:"nodes"`
 			PageInfo struct {
 				HasNextPage bool   `json:"hasNextPage"`
@@ -75,6 +83,10 @@ func (c *Client) FetchStarred() ([]Repo, error) {
 				IsOwner:        n.Owner.Login == resp.Viewer.Login,
 				IsFork:         n.IsFork,
 				Parent:         parentName(n.Parent),
+				PushedAt:       n.PushedAt,
+				IsArchived:     n.IsArchived,
+				License:        n.LicenseInfo.id(),
+				DiskKB:         n.DiskUsage,
 			})
 		}
 		if !page.PageInfo.HasNextPage {

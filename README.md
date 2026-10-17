@@ -91,7 +91,7 @@ Existing clones are found anywhere under your home directory, including git work
 
 ### Themes
 
-Built in: `catppuccin` (default), `dracula`, `everforest`, `graphite`, `gruvbox`, `kanagawa`, `nord`, `rose-pine`, `solarized` and `tokyonight`, each with a light and dark variant picked from the terminal background. Set one with `--theme NAME` or `GH_SELECT_THEME`, or press `ctrl+t`, which saves the choice to `~/.config/gh-select/theme`.
+Built in: `gruvbox` (default), `catppuccin`, `dracula`, `everforest`, `graphite`, `kanagawa`, `nord`, `rose-pine`, `solarized` and `tokyonight`, each with a light and dark variant picked from the terminal background. Set one with `--theme NAME` or `GH_SELECT_THEME`, or press `ctrl+t`, which saves the choice to `~/.config/gh-select/theme`.
 
 A custom theme is a JSON file in `~/.config/gh-select/themes/`, named after the theme. Colors left out come from the theme in `extends`, which can be built in or custom:
 

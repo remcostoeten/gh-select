@@ -295,7 +295,7 @@ func (a *App) listHelpHeight() int { return a.height - chromeLines - listTopLine
 // detailLines is the height of the details block under the list, or 0 when
 // the terminal is too short to spare it.
 func (a *App) detailLines() int {
-	if a.listHelpHeight()-repoDetailLines < 8 {
+	if a.listHelpHeight()-repoDetailLines < 14 {
 		return 0
 	}
 	return repoDetailLines
@@ -696,6 +696,12 @@ func (a *App) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case "ctrl+t":
 		return a.nextTheme()
+	case "ctrl+g":
+		a.markNote = dimStyle.Render("border ") + keyStyle.Render(cycleBorder())
+		return a, nil
+	case "ctrl+o":
+		a.markNote = dimStyle.Render("icons ") + keyStyle.Render(toggleIcons())
+		return a, nil
 	case "ctrl+x":
 		// ctrl-prefixed, because bare keys are search input on this screen.
 		return a.toggleMark()
@@ -887,7 +893,7 @@ func (a *App) scopeTabs(w int) string {
 			tabs += dimStyle.Render(" ○ "+s.name+" ") + " "
 		}
 	}
-	tabs += " " + keyStyle.Render("tab") + dimStyle.Render(" switch")
+	tabs += " " + keycapStyle.Render("tab") + dimStyle.Render(" switch")
 	summary := dimStyle.Render(a.listSummary()) + "  "
 	gap := w - lipgloss.Width(tabs) - lipgloss.Width(summary)
 	if gap < 1 {
@@ -957,7 +963,7 @@ func (a *App) viewList() string {
 			body = dimStyle.Render("type a username, repo, or owner/name, e.g. torvalds/linux")
 		case a.query != "" && a.scope != scopeGitHub:
 			body = dimStyle.Render("no repositories match “"+a.query+"”") + "\n\n" +
-				keyStyle.Render("tab") + dimStyle.Render(" to search all of GitHub for it")
+				keycapStyle.Render("tab") + dimStyle.Render(" to search all of GitHub for it")
 		case a.query != "":
 			body = dimStyle.Render("no repositories match “" + a.query + "”")
 		default:
@@ -1078,9 +1084,12 @@ func listHelpBody() string {
 		{"tab", "switch: my repos → starred → GitHub search (shift+tab back)"},
 		{"ctrl+s", "sort: recent · stars · name"},
 		{"ctrl+t", "next color theme (remembered)"},
+		{"ctrl+g", "next border style (this session)"},
+		{"ctrl+o", "toggle Nerd Font icons (this session)"},
 		{"lang:go", "only repos in that language"},
 		{"is:private", "also is:public, is:local (cloned here), is:mine"},
 		{"is:fork", "only forks; is:source hides them"},
+		{"is:archived", "only archived repos; is:active hides them"},
 		{"↑↓ pgup pgdn", "move"},
 		{"enter", "open the action menu"},
 		{"esc", "clear the search · leave GitHub · quit"},

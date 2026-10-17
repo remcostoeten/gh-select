@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/paginator"
@@ -48,7 +49,7 @@ func (d compactDelegate) Render(w io.Writer, m list.Model, index int, item list.
 
 	cursor := ""
 	nameStyle := lipgloss.NewStyle().Foreground(colFg)
-	if d.bare && !r.IsOwner {
+	if d.bare && !r.IsOwner || r.IsArchived {
 		nameStyle = dimStyle
 	}
 	if index == m.Index() {
@@ -75,6 +76,9 @@ func (d compactDelegate) Render(w io.Writer, m list.Model, index int, item list.
 	if l.cols.lang > 0 {
 		row += "  " + padRight(langLabel(r.Language), l.cols.lang)
 	}
+	if l.cols.updated > 0 {
+		row += "  " + padLeft(dimStyle.Render(shortAge(r.LastActivity(), time.Now())), l.cols.updated)
+	}
 	stars := ""
 	if l.cols.stars > 0 {
 		stars = padLeft(dimStyle.Render(starLabel(r.StargazerCount)), l.cols.stars)
@@ -83,7 +87,7 @@ func (d compactDelegate) Render(w io.Writer, m list.Model, index int, item list.
 }
 
 // rowLayout is how a list row splits its width: the name column and the
-// widths of the tags, language and stars columns after it.
+// widths of the tags, language, pushed and stars columns after it.
 type rowLayout struct {
 	name int
 	cols rowColumns
@@ -103,7 +107,7 @@ func (d compactDelegate) layout(m list.Model) rowLayout {
 		mark = 2
 	}
 	fixed := mark
-	for _, c := range []int{cols.tags, cols.lang, cols.stars} {
+	for _, c := range []int{cols.tags, cols.lang, cols.updated, cols.stars} {
 		if c > 0 {
 			fixed += c + 2
 		}
@@ -125,7 +129,10 @@ func (d compactDelegate) tags(r gh.Repo) string {
 		tags = append(tags, tag(privateBadge, iconPrivate, "private"))
 	}
 	if r.IsFork {
-		tags = append(tags, tag(forkBadge, iconFork, "fork"))
+		tags = append(tags, labeled(forkBadge, iconFork, "fork"))
+	}
+	if r.IsArchived {
+		tags = append(tags, labeled(dimStyle, iconArchive, "archived"))
 	}
 	if _, cloned := d.locals[r.NameWithOwner]; cloned {
 		tags = append(tags, tag(publicBadge, iconLocal, "local"))
@@ -133,7 +140,7 @@ func (d compactDelegate) tags(r gh.Repo) string {
 	return strings.Join(tags, " ")
 }
 
-type rowColumns struct{ name, tags, lang, stars int }
+type rowColumns struct{ name, tags, lang, updated, stars int }
 
 func (d compactDelegate) columns(items []list.Item) rowColumns {
 	var c rowColumns
@@ -145,11 +152,15 @@ func (d compactDelegate) columns(items []list.Item) rowColumns {
 		c.name = max(c.name, lipgloss.Width(d.label(it.repo)))
 		c.tags = max(c.tags, lipgloss.Width(d.tags(it.repo)))
 		c.lang = max(c.lang, lipgloss.Width(langLabel(it.repo.Language)))
+		c.updated = max(c.updated, lipgloss.Width(shortAge(it.repo.LastActivity(), time.Now())))
 		c.stars = max(c.stars, lipgloss.Width(starLabel(it.repo.StargazerCount)))
 	}
 	c.lang = min(c.lang, 16)
 	if c.lang > 0 {
 		c.lang = max(c.lang, lipgloss.Width("Language"))
+	}
+	if c.updated > 0 {
+		c.updated = max(c.updated, lipgloss.Width("Pushed"))
 	}
 
 	return c
@@ -168,6 +179,9 @@ func (d compactDelegate) header(m list.Model) string {
 	}
 	if l.cols.lang > 0 {
 		row += "  " + padRight(columnStyle.Render("Language"), l.cols.lang)
+	}
+	if l.cols.updated > 0 {
+		row += "  " + padLeft(columnStyle.Render("Pushed"), l.cols.updated)
 	}
 	return padRight(row, m.Width())
 }

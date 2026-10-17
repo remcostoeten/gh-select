@@ -47,9 +47,9 @@ func TestHeaderShowsBuildAndSource(t *testing.T) {
 	a = send(t, a, tea.WindowSizeMsg{Width: 120, Height: 30})
 
 	v := a.View()
-	for _, want := range []string{"v1.2.0", "270fe07", "updated 3 Oct 2026", "Remco Stoeten", "github.com/remcostoeten/gh-select"} {
+	for _, want := range []string{"v1.2.0", "270fe07", "updated 3 Oct 2026", "Remco Stoeten", "remcostoeten.nl", "github.com/remcostoeten/gh-select"} {
 		if !strings.Contains(v, want) {
-			t.Errorf("header is missing %q", want)
+			t.Errorf("chrome is missing %q", want)
 		}
 	}
 	if got := lipgloss.Height(v); got != 30 {
@@ -57,8 +57,8 @@ func TestHeaderShowsBuildAndSource(t *testing.T) {
 	}
 
 	a = send(t, a, tea.WindowSizeMsg{Width: 40, Height: 30})
-	if v := a.View(); !strings.Contains(v, "v1.2.0") || strings.Contains(v, "Remco Stoeten") {
-		t.Error("narrow header should keep the version and drop the author")
+	if v := a.View(); !strings.Contains(v, "v1.2.0") {
+		t.Error("narrow header should keep the version")
 	}
 }
 

@@ -18,6 +18,19 @@ type Repo struct {
 	IsOwner        bool      `json:"isOwner"`
 	IsFork         bool      `json:"isFork"`
 	Parent         string    `json:"parent,omitempty"` // "owner/repo" a fork was made from, when known
+	PushedAt       time.Time `json:"pushedAt"`
+	IsArchived     bool      `json:"isArchived"`
+	License        string    `json:"license,omitempty"` // SPDX id, "NOASSERTION" for an unrecognized license
+	DiskKB         int       `json:"diskKB"`
+}
+
+// LastActivity is when code was last pushed, falling back to the last update
+// of any kind for payloads that lack a push time.
+func (r Repo) LastActivity() time.Time {
+	if r.PushedAt.IsZero() {
+		return r.UpdatedAt
+	}
+	return r.PushedAt
 }
 
 // URL returns the canonical https URL for the repository.
@@ -62,6 +75,10 @@ query($cursor: String) {
         owner { login }
         isFork
         parent { nameWithOwner }
+        pushedAt
+        isArchived
+        licenseInfo { spdxId }
+        diskUsage
       }
       pageInfo { hasNextPage endCursor }
     }
@@ -88,6 +105,10 @@ type reposResponse struct {
 				Parent *struct {
 					NameWithOwner string `json:"nameWithOwner"`
 				} `json:"parent"`
+				PushedAt    time.Time    `json:"pushedAt"`
+				IsArchived  bool         `json:"isArchived"`
+				LicenseInfo *licenseInfo `json:"licenseInfo"`
+				DiskUsage   int          `json:"diskUsage"`
 			} `json:"nodes"`
 			PageInfo struct {
 				HasNextPage bool   `json:"hasNextPage"`
@@ -127,6 +148,10 @@ func (c *Client) FetchRepos() ([]Repo, error) {
 				IsOwner:        n.Owner.Login == viewer,
 				IsFork:         n.IsFork,
 				Parent:         parentName(n.Parent),
+				PushedAt:       n.PushedAt,
+				IsArchived:     n.IsArchived,
+				License:        n.LicenseInfo.id(),
+				DiskKB:         n.DiskUsage,
 			})
 		}
 
@@ -147,6 +172,17 @@ func parentName(p *struct {
 		return ""
 	}
 	return p.NameWithOwner
+}
+
+type licenseInfo struct {
+	SpdxID string `json:"spdxId"`
+}
+
+func (l *licenseInfo) id() string {
+	if l == nil {
+		return ""
+	}
+	return l.SpdxID
 }
 
 // dedupeRepos drops repeated NameWithOwner entries, keeping the first occurrence
