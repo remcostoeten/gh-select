@@ -34,6 +34,22 @@ type compactDelegate struct {
 	bare   bool
 	locals map[string]string  // "owner/repo" → working copy already on disk
 	marked map[string]gh.Repo // "owner/repo" → marked for bulk deletion
+	memo   *columnsMemo
+}
+
+// columnsMemo holds the column widths of one item list, so drawing a frame
+// measures every repo once instead of once per visible row.
+type columnsMemo struct {
+	items []list.Item
+	icons bool
+	cols  rowColumns
+}
+
+func (c *columnsMemo) holds(items []list.Item) bool {
+	if c.icons != nerdIcons || len(c.items) != len(items) {
+		return false
+	}
+	return len(items) == 0 || &c.items[0] == &items[0]
 }
 
 func (compactDelegate) Height() int                         { return 1 }
@@ -97,7 +113,7 @@ type rowLayout struct {
 // row so the language column sits mid-row, and drops the metadata columns on
 // narrow lists.
 func (d compactDelegate) layout(m list.Model) rowLayout {
-	cols := d.columns(m.Items())
+	cols := d.cachedColumns(m.Items())
 	width := m.Width()
 	if width < 48 {
 		cols = rowColumns{name: cols.name}
@@ -141,6 +157,16 @@ func (d compactDelegate) tags(r gh.Repo) string {
 }
 
 type rowColumns struct{ name, tags, lang, updated, stars int }
+
+func (d compactDelegate) cachedColumns(items []list.Item) rowColumns {
+	if d.memo == nil {
+		return d.columns(items)
+	}
+	if !d.memo.holds(items) {
+		*d.memo = columnsMemo{items: items, icons: nerdIcons, cols: d.columns(items)}
+	}
+	return d.memo.cols
+}
 
 func (d compactDelegate) columns(items []list.Item) rowColumns {
 	var c rowColumns

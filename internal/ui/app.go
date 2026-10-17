@@ -107,8 +107,9 @@ type App struct {
 
 	screen   screen
 	list     list.Model
-	repos    []gh.Repo // viewer's repos (scopeMine); list items are query matches
-	query    string    // always-on search text for the repo list
+	rows     compactDelegate // the list's row renderer, shared with the column header
+	repos    []gh.Repo       // viewer's repos (scopeMine); list items are query matches
+	query    string          // always-on search text for the repo list
 	selected gh.Repo
 
 	// search scope + debounced GitHub search state
@@ -202,10 +203,13 @@ func NewApp(client *gh.Client, initial []gh.Repo, refresh bool, saveFn func([]gh
 
 // refreshDelegate rebuilds the row renderer so it sees the current scope and
 // the live locals/marked maps.
-func (a *App) refreshDelegate() { a.list.SetDelegate(a.delegate()) }
+func (a *App) refreshDelegate() {
+	a.rows = a.delegate()
+	a.list.SetDelegate(a.rows)
+}
 
 func (a *App) delegate() compactDelegate {
-	return compactDelegate{bare: a.scope == scopeMine, locals: a.locals, marked: a.marked}
+	return compactDelegate{bare: a.scope == scopeMine, locals: a.locals, marked: a.marked, memo: &columnsMemo{}}
 }
 
 // SetLocalClones tells the UI which repos already exist on disk, keyed by
@@ -976,7 +980,7 @@ func (a *App) viewList() string {
 	if frameless {
 		header = ""
 		if len(a.list.Items()) > 0 {
-			header = a.delegate().header(a.list)
+			header = a.rows.header(a.list)
 		}
 	}
 	out := tabs + search + "\n" + panel(header, body, lw, lh, false)
