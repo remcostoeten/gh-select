@@ -22,10 +22,24 @@ import (
 	"github.com/remcostoeten/gh-select/internal/local"
 	"github.com/remcostoeten/gh-select/internal/sys"
 	"github.com/remcostoeten/gh-select/internal/ui"
+	"github.com/remcostoeten/gh-select/internal/update"
 )
 
 // version is overridden at build time via -ldflags "-X main.version=...".
 var version = "dev"
+
+// selfRepo is where releases of this program are published.
+const selfRepo = "remcostoeten/gh-select"
+
+// upgradeHint says how to install a newer release for the way this binary was
+// installed.
+func upgradeHint() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return update.Hint("")
+	}
+	return update.Hint(exe)
+}
 
 // vcsInfo is the commit the Go toolchain embedded at build time, shortened,
 // whether the tree was dirty, and the commit time. Empty when built outside a
@@ -86,7 +100,11 @@ func main() {
 
 	switch inv.command {
 	case "version":
-		fmt.Printf("gh-select %s\n", resolveVersion())
+		current := resolveVersion()
+		fmt.Printf("gh-select %s\n", current)
+		if latest := update.Cached(config.Load().CacheDir, current); latest != "" {
+			fmt.Fprintf(os.Stderr, "%s available: %s\n", latest, upgradeHint())
+		}
 		return
 	case "doctor":
 		err = doctor()
@@ -212,6 +230,15 @@ func run(opts options) error {
 	app := ui.NewApp(client, initial, needRefresh, saveFn, resolveVersion())
 	rev, _, updated := vcsInfo()
 	app.SetBuild(rev, updated)
+	if !cfg.NoUpdateCheck {
+		app.SetUpdateCheck(func() (string, string) {
+			fetch := func() (string, error) {
+				release, err := client.FetchLatestRelease(selfRepo)
+				return release.TagName, err
+			}
+			return update.Check(cfg.CacheDir, resolveVersion(), fetch), upgradeHint()
+		})
+	}
 	if localsSaved {
 		app.SetLocalClones(locals)
 	}

@@ -103,6 +103,8 @@ type App struct {
 	saveFn func([]gh.Repo) // persist freshly fetched repos to cache
 	meta   buildMeta       // version, author, source and build shown in the header
 
+	updateCheck func() (tag, hint string) // looks for a newer release on start; nil skips it
+
 	screen   screen
 	list     list.Model
 	repos    []gh.Repo // viewer's repos (scopeMine); list items are query matches
@@ -403,9 +405,9 @@ func (a *App) editQuery(next string) (tea.Model, tea.Cmd) {
 
 func (a *App) Init() tea.Cmd {
 	if a.loading {
-		return tea.Batch(a.fetchCmd(), a.spinner.Tick, a.scanLocalsCmd())
+		return tea.Batch(a.fetchCmd(), a.spinner.Tick, a.scanLocalsCmd(), a.updateCheckCmd())
 	}
-	return a.scanLocalsCmd()
+	return tea.Batch(a.scanLocalsCmd(), a.updateCheckCmd())
 }
 
 // anyLoading reports whether any screen is awaiting a network fetch (used to
@@ -602,6 +604,11 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case creditsStatusMsg:
 		a.status = msg.text
+		return a, nil
+
+	case updateAvailableMsg:
+		a.meta.latest = msg.tag
+		a.meta.hint = msg.hint
 		return a, nil
 
 	case releasesStatusMsg:

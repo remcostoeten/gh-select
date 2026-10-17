@@ -59,6 +59,8 @@ var commands = []command{
 		details: []string{
 			"Prints the release version. Local builds print the commit instead,",
 			"like dev+5006ea0, with -dirty when the tree had uncommitted changes.",
+			"When the app's last daily check found a newer release, a second line",
+			"on stderr names it and how to upgrade.",
 		},
 	},
 	{
@@ -328,6 +330,7 @@ func printHelp(w *os.File) {
 		same("GH_SELECT_TRANSPARENT", "--transparent"),
 		env("GH_SELECT_SCAN_DIRS", "folders searched first for clones, split like PATH"),
 		env("GH_SELECT_CACHE_TTL", "seconds before the repo cache is stale, 1800"),
+		env("GH_SELECT_NO_UPDATE_CHECK", "skip the daily check for a newer release, also off under CI"),
 		env("NO_COLOR", "plain help and error output"),
 		"",
 		"  "+p.bold("In the app")+"  "+p.dim("press ")+p.cyan("?")+p.dim(" for every key"),

@@ -134,6 +134,8 @@ gh extension install remcostoeten/gh-select
 gh extension upgrade gh-select
 ```
 
+Once a day the app asks GitHub for the latest release. When there is a newer one, the header says so next to the version, with the upgrade command, and `gh select version` repeats it on stderr. Set `GH_SELECT_NO_UPDATE_CHECK=1` to turn the check off. It is also off when `CI` is set and for local builds.
+
 ### Standalone binary
 
 Each release ships a binary per platform, named like `linux-amd64` or `darwin-arm64`:

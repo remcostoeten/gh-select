@@ -4,6 +4,15 @@ All notable changes to gh-select are documented here.
 
 ## [Unreleased]
 
+### Added
+- **New release notice.** Once a day the app checks GitHub for a newer
+  release, cached in `latest-release.json` under the cache directory. When
+  one exists the header shows `vX.Y.Z available` with the upgrade command,
+  `gh extension upgrade gh-select` for extension installs or the releases
+  page otherwise, and `gh select version` repeats it on stderr.
+  `GH_SELECT_NO_UPDATE_CHECK=1` or `CI` turns the check off; local builds
+  never check.
+
 ## [2.5.0] - 2026-10-03
 
 ### Added
