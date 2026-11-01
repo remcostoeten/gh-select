@@ -1,0 +1,40 @@
+---
+title: Exit codes and errors
+description: The exit status of every outcome and the error messages you are most likely to see.
+icon: FileText
+sidebarBadge: cli
+---
+
+## Exit codes
+
+| Code  | When                                                                            |
+| ----- | ------------------------------------------------------------------------------- |
+| `0`   | the command or action finished, including quitting the picker without an action |
+| `1`   | a runtime error. The message goes to stderr, prefixed `error`                   |
+| `2`   | the command line was not understood                                             |
+| `130` | `--print-path` ended without a pick                                             |
+
+Usage errors print two lines, the problem and a pointer to the help, and suggest the closest valid name when one is near:
+
+```txt
+  error unknown option --thmee, did you mean --theme?
+  run gh select help for usage
+```
+
+## Common errors
+
+| Message                                                                   | Meaning and fix                                                                                                    |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `could not authenticate with GitHub (run gh auth login)`                  | `gh` has no token for the default host. Run `gh auth login`                                                        |
+| `PATH already exists`                                                     | a clone or an unpack would land on an existing folder. Remove it or pick another directory                         |
+| `no editor found, set $EDITOR`                                            | no editor in `VISUAL`, `EDITOR` or on `PATH`. See [your editor](/docs/guides/cloning-and-local-clones#your-editor) |
+| `unknown theme "NAME" (valid: ...)`                                       | `--theme` or `GH_SELECT_THEME` names no built-in or custom theme                                                   |
+| `unknown border "NAME"` and `unknown icon set "NAME" (valid: nerd, none)` | the value of `--border` or `--icons` is not valid                                                                  |
+| `NAME: checksum mismatch ... file discarded`                              | the download did not match the release's checksum file and was removed                                             |
+| `OWNER/REPO: refused, the token is missing the delete_repo scope`         | run `gh auth refresh -s delete_repo`                                                                               |
+| `N of M deletions failed: ...`                                            | some deletions in a batch failed. The others went through                                                          |
+| `N files is too many to save one by one`                                  | saving is capped at 200 files. Use `c` for a partial clone                                                         |
+
+## Running quietly
+
+Errors are colored only on a terminal, and `NO_COLOR` turns the color off.

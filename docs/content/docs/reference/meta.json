@@ -1,0 +1,15 @@
+{
+  "title": "Reference",
+  "icon": "BookOpen",
+  "pages": [
+    "commands",
+    "options",
+    "environment-variables",
+    "keybindings",
+    "filter-tokens",
+    "action-menu",
+    "theme-file",
+    "files-and-paths",
+    "exit-codes"
+  ]
+}

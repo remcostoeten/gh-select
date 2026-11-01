@@ -1,0 +1,66 @@
+---
+title: Theme file
+description: The JSON format of a custom theme, the ten color slots and the rules for extending another theme.
+icon: Palette
+sidebarBadge: config
+---
+
+A custom theme is a JSON file at `~/.config/gh-select/themes/NAME.json`, or under `$XDG_CONFIG_HOME/gh-select/themes/`. The file name without `.json`, lowercased, is the theme name.
+
+```json title="~/.config/gh-select/themes/midnight.json"
+{
+  "extends": "nord",
+  "dark": { "hl": "#c792ea", "pink": "#ff5370" },
+  "light": { "hl": "#7c4dff" }
+}
+```
+
+## Fields
+
+| Field     | Type   | Meaning                                                                                |
+| --------- | ------ | -------------------------------------------------------------------------------------- |
+| `extends` | string | The theme to inherit from, built in or custom, case-insensitive. Defaults to `gruvbox` |
+| `dark`    | object | Colors used on a dark terminal background                                              |
+| `light`   | object | Colors used on a light terminal background                                             |
+
+Every color is optional. A missing one comes from the theme in `extends`, for that variant.
+
+## Color slots
+
+| Slot     | Used for                                                                                                |
+| -------- | ------------------------------------------------------------------------------------------------------- |
+| `bg`     | the background, unless `--transparent` is set. Blended 10% toward `fg` for the selected row and keycaps |
+| `fg`     | body text                                                                                               |
+| `dim`    | secondary text, hints and separators                                                                    |
+| `hl`     | column titles and the labels of detail rows                                                             |
+| `cyan`   | the screen name in the header, panel titles, key names and keycaps                                      |
+| `blue`   | the `fork` badge and the status line                                                                    |
+| `green`  | the `public` badge, section headings, marked rows and local clone paths                                 |
+| `pink`   | the app name and the selected row                                                                       |
+| `yellow` | the `private` badge                                                                                     |
+| `red`    | errors and deletion                                                                                     |
+
+Each value is `#rrggbb`. Three-digit hex, names and `rgb()` are rejected.
+
+## Rules
+
+- The terminal background decides which of `dark` and `light` applies.
+- A theme can extend another custom theme, in any file order.
+- A custom theme with a built-in name replaces that built-in.
+- A theme that extends itself uses the built-in of that name as its base.
+- A cycle between custom themes is reported as `extends "NAME" in a loop`.
+
+## Errors
+
+A broken file is skipped and the rest still load. The footer shows what was wrong, with the file name:
+
+| Message                                          | Cause                                              |
+| ------------------------------------------------ | -------------------------------------------------- |
+| `themes/NAME.json: ...` followed by a JSON error | the file is not valid JSON                         |
+| `extends unknown theme "NAME"`                   | `extends` names a theme that does not exist        |
+| `dark: unknown color "NAME" (valid: ...)`        | a slot name is misspelled                          |
+| `dark.hl: "VALUE" is not a #rrggbb color`        | the value is not six hex digits with a leading `#` |
+
+## Built-in values
+
+The built-in palettes live in `internal/ui/theme.go` in the [source](https://github.com/remcostoeten/gh-select/blob/master/internal/ui/theme.go). Copy one as a starting point and change only the slots you care about.

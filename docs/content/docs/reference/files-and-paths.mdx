@@ -1,0 +1,52 @@
+---
+title: Files and paths
+description: What gh-select writes to your cache and config directories, and where release assets, saved files and clones go.
+icon: Folder
+sidebarBadge: config
+---
+
+## Cache directory
+
+`$XDG_CACHE_HOME/gh-select`, or `~/.cache/gh-select` when the variable is unset. When your home directory cannot be found, the system temporary directory is used.
+
+| File                  | Holds                                                                            |
+| --------------------- | -------------------------------------------------------------------------------- |
+| `repos-v3.json`       | the repository list for My repos                                                 |
+| `starred-v3.json`     | the starred list                                                                 |
+| `locals.json`         | the map from `owner/repo` to the local clone found by the last scan              |
+| `latest-release.json` | the newest release tag seen and when it was checked, for the daily update notice |
+
+Everything in it can be deleted. The next start fetches and scans again. The `-v3` suffix is the cache schema. A release that changes the stored fields bumps it, which refetches once.
+
+A cache file is written to a `.tmp` file and renamed, so an interrupted run never leaves a half-written list.
+
+## Config directory
+
+`$XDG_CONFIG_HOME/gh-select`, or `~/.config/gh-select`.
+
+| Path               | Holds                                                           |
+| ------------------ | --------------------------------------------------------------- |
+| `theme`            | the name of the theme last picked with `ctrl+t`                 |
+| `themes/NAME.json` | custom themes. See the [theme file](/docs/reference/theme-file) |
+
+gh-select creates the directory only when it saves a theme. It never writes any other setting. Everything else is a flag or an environment variable.
+
+## Files you ask for
+
+| What                  | Where                                                                                                  |
+| --------------------- | ------------------------------------------------------------------------------------------------------ |
+| Clones                | `CLONE_DIR/REPO`, or `./REPO` without a clone directory                                                |
+| Partial clones        | the same place as clones                                                                               |
+| Release assets        | `DOWNLOAD_DIR/FILE`, or `./FILE`                                                                       |
+| Unpacked archives     | a folder inside `DOWNLOAD_DIR`, named after the archive's single top-level folder or after the archive |
+| One saved file        | `DOWNLOAD_DIR/FILE`                                                                                    |
+| Several saved files   | `DOWNLOAD_DIR/REPO/PATH`, keeping repository paths                                                     |
+| In-progress downloads | `FILE.part`, renamed when complete                                                                     |
+
+The clone directory is `-d`/`--dir`, then `GH_SELECT_CLONE_DIR`. The download directory is `--download-dir`, then `GH_SELECT_DOWNLOAD_DIR`. Both expand a leading `~`.
+
+Nothing is ever overwritten. A clone onto an existing folder fails, a download onto an existing file fails, and a saved file gets a `-1`, `-2` suffix.
+
+## Binary and build info
+
+A release build gets its version from the tag. A local build reports the commit it was built from, such as `dev+270fe07`, read from the build information Go embeds.

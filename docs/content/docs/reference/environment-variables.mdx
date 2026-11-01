@@ -1,0 +1,50 @@
+---
+title: Environment variables
+description: Every variable gh-select reads, with defaults and the flag it matches.
+icon: FileText
+sidebarBadge: cli
+---
+
+None are required. Flags win over variables.
+
+## gh-select
+
+| Variable                    | Default                     | Effect                                                                                                                 |
+| --------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `GH_SELECT_CLONE_DIR`       | current directory           | same as `--dir`                                                                                                        |
+| `GH_SELECT_DOWNLOAD_DIR`    | current directory           | same as `--download-dir`                                                                                               |
+| `GH_SELECT_THEME`           | saved theme, then `gruvbox` | same as `--theme`                                                                                                      |
+| `GH_SELECT_BORDER`          | `none`                      | same as `--border`                                                                                                     |
+| `GH_SELECT_ICONS`           | `nerd`                      | same as `--icons`                                                                                                      |
+| `GH_SELECT_TRANSPARENT`     | unset                       | any non-empty value is the same as `--transparent`                                                                     |
+| `GH_SELECT_SCAN_DIRS`       | unset                       | directories searched first for existing clones, separated like `PATH`                                                  |
+| `GH_SELECT_CACHE_TTL`       | `1800`                      | seconds before the repo cache is stale. `0` makes it always stale. A non-number or negative value falls back to `1800` |
+| `GH_SELECT_NO_UPDATE_CHECK` | unset                       | any non-empty value skips the daily check for a newer release                                                          |
+
+`GH_SELECT_CLONE_DIR`, `GH_SELECT_DOWNLOAD_DIR` and every entry of `GH_SELECT_SCAN_DIRS` expand a leading `~`.
+
+## Others it reads
+
+| Variable           | Effect                                                                                |
+| ------------------ | ------------------------------------------------------------------------------------- |
+| `NO_COLOR`         | any non-empty value turns off color in help and error output                          |
+| `CI`               | any non-empty value turns off the update check                                        |
+| `VISUAL`, `EDITOR` | the editor for **Open in editor**, `VISUAL` first. Flags are allowed, as in `code -w` |
+| `XDG_CONFIG_HOME`  | base for the config directory, `~/.config` when unset                                 |
+| `XDG_CACHE_HOME`   | base for the cache directory, `~/.cache` when unset                                   |
+
+The GitHub token is not a variable. It comes from `gh auth login`. See [how it works](/docs/how-it-works#authentication).
+
+## Examples
+
+```bash title="~/.bashrc or ~/.zshrc"
+export GH_SELECT_CLONE_DIR=~/dev
+export GH_SELECT_SCAN_DIRS=~/work:~/oss
+export GH_SELECT_THEME=tokyonight
+export GH_SELECT_CACHE_TTL=3600
+```
+
+```sh title="~/.config/fish/config.fish"
+set -gx GH_SELECT_CLONE_DIR ~/dev
+set -gx GH_SELECT_SCAN_DIRS ~/work:~/oss
+```

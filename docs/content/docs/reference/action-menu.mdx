@@ -1,0 +1,42 @@
+---
+title: Action menu
+description: Every action offered for a repository, and which ones depend on whether it is cloned or yours.
+icon: FileText
+sidebarBadge: tui
+---
+
+`enter` on a repository opens its action menu. The rows are numbered, and pressing a number runs that row. The menu is built per repository, so the numbers change with the entries on offer. With `--print-path`, `enter` skips the menu.
+
+## Rows
+
+| Group | Row                    | What it does                                                                              |
+| ----- | ---------------------- | ----------------------------------------------------------------------------------------- |
+| 1     | **Clone**              | the full repository. Offered when it is not cloned                                        |
+| 1     | **Clone & open**       | clone, then open the folder in your editor. Offered when it is not cloned                 |
+| 1     | **Open in editor**     | open the local clone. Offered when it is cloned                                           |
+| 1     | **Pull**               | `git pull --ff-only` in the local clone. Offered when it is cloned                        |
+| 2     | **Clone again**        | a second, separate copy. Offered when it is cloned                                        |
+| 2     | **Clone branch…**      | pick a branch or tag, then clone with `--branch`                                          |
+| 2     | **Browse files…**      | the [tree browser](/docs/guides/browsing-and-partial-clone)                               |
+| 2     | **View README**        | the repository's README, rendered in the terminal                                         |
+| 2     | **Releases…**          | notes and [asset downloads](/docs/guides/releases)                                        |
+| 3     | **Copy name**          | `owner/repo` to the clipboard                                                             |
+| 3     | **Copy URL**           | the https link to the clipboard                                                           |
+| 3     | **Open in browser**    | the repository page on github.com                                                         |
+| 4     | **Delete repository…** | [deletes it on GitHub](/docs/guides/deleting-repositories). Only for repositories you own |
+
+Groups are separated by a blank line.
+
+## Clone branch
+
+Opens a picker of the repository's branches and tags, with tags marked. Type to search, `enter` to clone that ref with `git clone --branch REF`, `esc` to go back.
+
+## View README
+
+Asks GitHub which file is the README, so `docs/README.md`, `.github/README.md` and odd casing all work. It is rendered with the active theme.
+
+## After the screen closes
+
+Clone, pull, editor, copy and open actions run after the screen has closed, so their output prints in your normal terminal. Pull prints `Pulling PATH…`, and a clone prints `Cloning OWNER/REPO → TARGET…` on stderr, with the branch when there is one.
+
+The details panel next to the menu shows access, fork parent, language, stars, last push, license, size and local path. On a narrow terminal the summary moves into the menu panel.

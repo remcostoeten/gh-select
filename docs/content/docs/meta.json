@@ -1,0 +1,17 @@
+{
+  "title": "gh-select",
+  "root": true,
+  "pages": [
+    "index",
+    "installation",
+    "quick-start",
+    "guides",
+    "reference",
+    "how-it-works",
+    "troubleshooting",
+    "development",
+    "changelog",
+    "---Links---",
+    "[GitHub](https://github.com/remcostoeten/gh-select)"
+  ]
+}

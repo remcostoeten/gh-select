@@ -1,0 +1,74 @@
+---
+title: Quick start
+description: Open the list, pick a repository and clone it, then try browsing and partial clone.
+icon: Rocket
+---
+
+<Steps>
+<Step>
+
+### Open the list
+
+```bash
+gh select
+```
+
+The first run fetches your repositories, which takes a few seconds. After that the list opens at once.
+
+Type to filter. `↑` and `↓` move. `enter` opens the menu for the highlighted repository.
+
+![The repository list](/screens/list.png)
+
+</Step>
+<Step>
+
+### Pick an action
+
+Each action has a number, so `1` runs the first one.
+
+![The action menu for a repository](/screens/actions.png)
+
+**Clone** copies the whole repository into the current directory. **Open in editor** opens it. **Browse files…** lets you look inside before cloning anything.
+
+</Step>
+<Step>
+
+### Browse files
+
+Choose **Browse files…**. Move with the arrow keys and press `→` to open a folder or preview a file.
+
+![The file tree of a repository](/screens/tree.png)
+
+Press `space` on a file or folder to mark it.
+
+![One file marked in the file tree](/screens/tree-marked.png)
+
+</Step>
+<Step>
+
+### Clone only what you marked
+
+Press `c`. gh-select clones just the marked paths, so a large repository stays small on disk.
+
+![Terminal output of a partial clone](/screens/partial-clone.png)
+
+</Step>
+</Steps>
+
+## Where clones go
+
+Clones land in the current directory. To use one folder every time:
+
+```bash
+export GH_SELECT_CLONE_DIR=~/dev
+```
+
+## Search all of GitHub
+
+Press `tab` twice to reach **GitHub** and type a name. See [Finding repositories](/docs/guides/finding-repositories).
+
+## Help in the app
+
+Press `?` on an empty search to see every key.
+
+![The help overlay listing keys and credits](/screens/help.png)

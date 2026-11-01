@@ -1,0 +1,108 @@
+---
+title: Troubleshooting
+description: Fixes for missing icons, stale lists, authentication errors, clipboard problems and clones that are not recognized.
+icon: Lightbulb
+---
+
+Start with `gh select doctor`. It checks `git`, `gh` and your login, and works when nothing else does.
+
+## `gh select` is not found
+
+List your extensions and reinstall when gh-select is missing:
+
+```bash
+gh extension list
+gh extension install remcostoeten/gh-select
+```
+
+A standalone binary is run as `gh-select`, not `gh select`.
+
+## Icons show as empty boxes
+
+The icons are [Nerd Font](https://www.nerdfonts.com) glyphs and need a Nerd Font in your terminal. Use words instead, for one run or for good:
+
+```bash
+gh select --icons none
+export GH_SELECT_ICONS=none
+```
+
+## The list is out of date
+
+The list is cached for 30 minutes and refreshes in the background when older. Force a refetch:
+
+```bash
+gh select -n         # open with fresh data
+gh select refresh    # refetch and exit
+```
+
+Lower `GH_SELECT_CACHE_TTL` to shorten the window. A repository you just created appears after the next refresh.
+
+## A cloned repository is not tagged `local`
+
+- The scan runs in the background and the tags appear when it finishes. The first run after install has no `locals.json` yet.
+- The repository is matched by its git remote. A clone with no `origin` pointing at github.com, or with a different owner than the listed repository, does not match.
+- Folders such as `node_modules`, `vendor`, `target`, `dist`, `build` and `venv` are skipped, and so are hidden folders other than `.config` and `.dotfiles`.
+- Clones deeper than five levels under your home directory are missed. Add their parent folder to `GH_SELECT_SCAN_DIRS`.
+
+## Authentication fails
+
+`could not authenticate with GitHub (run gh auth login)` means `gh` has no token for the default host.
+
+```bash
+gh auth login
+gh auth status
+```
+
+For GitHub Enterprise, make sure the host you want is the default one in `gh`.
+
+## Delete is refused
+
+Deleting needs the `delete_repo` scope, which `gh auth login` does not grant:
+
+```bash
+gh auth refresh -s delete_repo
+```
+
+Only repositories you own can be marked. See [Deleting repositories](/docs/guides/deleting-repositories).
+
+## Search stops returning results
+
+GitHub search has its own, small budget of 30 requests per minute, shared with every tool using your login. See where you stand:
+
+```bash
+gh select limits
+```
+
+Wait for the window to reset, which the output shows. Typing pauses 350 ms before a search fires, so a slower typing speed uses fewer requests.
+
+## Copy does nothing
+
+gh-select tries `pbcopy`, `clip.exe`, `wl-copy`, `xclip` and `xsel` in that order. On Linux install `wl-clipboard` for Wayland or `xclip` for X11. Without any, the value is printed with `(clipboard not available)` or `no clipboard tool found`.
+
+## The theme will not save
+
+`ctrl+t` saves to `~/.config/gh-select/theme`. It cannot save while `--theme` or `GH_SELECT_THEME` is set, and says `(not saved: --theme or GH_SELECT_THEME is set)`. Unset the variable or change its value.
+
+A saved theme that has since been deleted is ignored with a note in the footer.
+
+## A custom theme does not load
+
+The footer names the file and the problem. Colors must be six-digit hex with a leading `#`, slot names are lowercase, and `extends` must name an existing theme. See the [theme file reference](/docs/reference/theme-file#errors).
+
+## The update notice never goes away
+
+The notice shows while a newer release than your version exists. Upgrade:
+
+```bash
+gh extension upgrade gh-select
+```
+
+To hide it, set `GH_SELECT_NO_UPDATE_CHECK=1`.
+
+## Clone says the folder already exists
+
+gh-select refuses to clone onto an existing folder rather than let git fail halfway. Remove the folder, choose a different clone directory with `-d`, or use **Clone again** from the menu of an already cloned repository.
+
+## Reporting a bug
+
+Press `?` on an empty search and then `i` to open a new issue. Include the output of `gh select version` and `gh select doctor`.

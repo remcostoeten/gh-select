@@ -163,6 +163,8 @@ scripts/dev.sh install   # install the local build as gh select
 scripts/dev.sh demo      # re-record assets/showcase.gif with vhs and Remotion
 ```
 
+The documentation site is in `docs/`, see its [README](docs/README.md).
+
 <br/>
 
 xxx,<br/>

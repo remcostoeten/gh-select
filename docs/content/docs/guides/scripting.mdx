@@ -1,0 +1,90 @@
+---
+title: Scripting and shell integration
+description: Jump into repositories with print-path, refresh the cache from cron, and rely on exit codes in scripts.
+icon: Route
+---
+
+## Jump into a repository
+
+`-p` or `--print-path` changes what `enter` does. The action menu is skipped: `enter` on a repository picks it, clones it first when it is not on disk, and prints its absolute path on stdout. Everything else, including the screen and git's progress, goes to stderr.
+
+```bash
+cd "$(gh select -p)"
+```
+
+A shell function that does not `cd` when you quit without picking:
+
+<Tabs groupId="shell" persist items={["bash and zsh", "fish"]}>
+<Tab value="bash and zsh">
+
+```bash
+ghcd() {
+  local dir
+  dir=$(gh select --print-path) && cd "$dir"
+}
+```
+
+</Tab>
+<Tab value="fish">
+
+```sh
+function ghcd
+    set -l dir (gh select --print-path); and cd $dir
+end
+```
+
+</Tab>
+</Tabs>
+
+Quitting without a pick exits with status `130`, so the `&&` stops and `cd ""` never runs.
+
+Combine it with a clone root so new clones land in one place:
+
+```bash
+GH_SELECT_CLONE_DIR=~/dev gh select -p
+```
+
+## Refresh the cache on a schedule
+
+`gh select refresh` fetches every repository you can access, saves the cache and prints the count. It never opens the screen, so it suits cron and timers.
+
+```bash
+gh select refresh
+```
+
+```txt title="Output"
+Refreshed 312 repositories
+```
+
+```txt title="crontab"
+*/30 * * * * gh select refresh >/dev/null 2>&1
+```
+
+Other commands, `doctor`, `limits`, `version` and `help`, also run once and exit.
+
+## Checking a version in a script
+
+```bash
+gh select version
+```
+
+```txt title="stdout"
+gh-select v2.6.0
+```
+
+A newer release, when the last daily check found one, is named on stderr, so `$(gh select version)` still captures only the version line. A local build prints `dev+COMMIT`, with `-dirty` when the tree had uncommitted changes.
+
+## Exit codes
+
+| Code  | Meaning                                                                            |
+| ----- | ---------------------------------------------------------------------------------- |
+| `0`   | success                                                                            |
+| `1`   | a runtime error, printed on stderr after `error`                                   |
+| `2`   | a command line that could not be understood, with the closest valid name suggested |
+| `130` | `--print-path` ended without a pick                                                |
+
+See [exit codes](/docs/reference/exit-codes) for details.
+
+## Plain output
+
+Help and error output is colored only when stderr or stdout is a terminal. Set `NO_COLOR` to any value to turn color off.

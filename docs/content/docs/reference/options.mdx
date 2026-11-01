@@ -1,0 +1,74 @@
+---
+title: Options
+description: Every flag the picker accepts, with its environment variable and default.
+icon: FileText
+sidebarBadge: cli
+---
+
+Options configure the picker and go with `gh select` alone. A flag always wins over its environment variable. An empty value keeps the built-in default.
+
+```bash
+gh select [options]
+```
+
+| Option               | Variable                 | Default           | Effect                                                             |
+| -------------------- | ------------------------ | ----------------- | ------------------------------------------------------------------ |
+| `-n`, `--no-cache`   | none                     | off               | skip the cache and fetch fresh data                                |
+| `-d`, `--dir DIR`    | `GH_SELECT_CLONE_DIR`    | current directory | clone into `DIR/REPO`                                              |
+| `--download-dir DIR` | `GH_SELECT_DOWNLOAD_DIR` | current directory | save release assets and files into `DIR`                           |
+| `-p`, `--print-path` | none                     | off               | print the picked repo's path on stdout, cloning it first if needed |
+| `--theme NAME`       | `GH_SELECT_THEME`        | `gruvbox`         | color theme                                                        |
+| `--border NAME`      | `GH_SELECT_BORDER`       | `none`            | panel border style                                                 |
+| `--icons NAME`       | `GH_SELECT_ICONS`        | `nerd`            | `nerd` or `none`                                                   |
+| `--transparent`      | `GH_SELECT_TRANSPARENT`  | off               | keep the terminal's background                                     |
+
+## -n, --no-cache
+
+Skips the cached repository list and fetches before the screen opens. The fresh list is saved afterwards. Starred repositories keep their own cache. See [caching](/docs/how-it-works#caching).
+
+## -d, --dir DIR
+
+The root for new clones. A leading `~` is expanded. The folder is created when needed, and a clone lands in `DIR/REPO`, not `DIR/OWNER/REPO`. The root is also searched for existing clones. See [cloning and local clones](/docs/guides/cloning-and-local-clones).
+
+## --download-dir DIR
+
+Where release assets and files saved from the tree browser go. A leading `~` is expanded. Existing files are never overwritten. See [releases](/docs/guides/releases) and [saving files](/docs/guides/browsing-and-partial-clone#save-files-without-git).
+
+## -p, --print-path
+
+On `enter`, skips the action menu, clones the repository when it is not on disk, and prints its absolute path on stdout. The screen and git's progress move to stderr. Quitting without a pick exits `130`. See [scripting](/docs/guides/scripting).
+
+## --theme NAME
+
+One of the built-in themes or a custom theme from `~/.config/gh-select/themes/NAME.json`. Names are case-insensitive. An unknown name fails with `unknown theme "NAME" (valid: ...)` and lists the valid ones.
+
+| Built-in                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------ |
+| `catppuccin`, `dracula`, `everforest`, `graphite`, `gruvbox`, `kanagawa`, `nord`, `rose-pine`, `solarized`, `tokyonight` |
+
+Setting it pins the theme: `ctrl+t` cycles for the session but does not save. See [themes](/docs/guides/themes).
+
+## --border NAME
+
+`none`, `hidden`, `rounded`, `sharp`, `double` or `thick`. `none` draws panels without frames, and the others add boxes. `hidden` keeps the bordered layout without drawing the frame.
+
+## --icons NAME
+
+`nerd` draws [Nerd Font](https://www.nerdfonts.com) glyphs for private, fork, archived, local and star markers. `none` replaces them with words.
+
+## --transparent
+
+Does not paint the theme's background, so the terminal's shows through. The environment variable counts as set for any non-empty value.
+
+## Writing a flag
+
+Flags take `--name value`, `--name=value` and `-name value`. A flag that needs a value and gets none fails with `--dir needs a value`.
+
+## Examples
+
+```bash
+gh select -d ~/code --theme nord
+gh select --border rounded --icons none
+gh select -n
+cd "$(gh select -p)"
+```

@@ -1,0 +1,75 @@
+---
+title: Installation
+description: Install gh-select with gh extension install. A standalone binary and go install also work.
+icon: Download
+---
+
+## Install
+
+You need the [GitHub CLI](https://cli.github.com/) logged in (`gh auth login`) and `git`. Then:
+
+```bash
+gh extension install remcostoeten/gh-select
+```
+
+Run it:
+
+```bash
+gh select
+```
+
+## Check it works
+
+```bash
+gh select doctor
+```
+
+![gh select doctor reporting git, gh and auth as ok](/screens/doctor.png)
+
+Anything marked `[x]` comes with a hint on how to fix it.
+
+## Update
+
+```bash
+gh extension upgrade gh-select
+```
+
+When a new release exists, the header of the app tells you and shows this command. Set `GH_SELECT_NO_UPDATE_CHECK=1` to turn the notice off.
+
+## Remove
+
+```bash
+gh extension remove gh-select
+```
+
+## Other ways to install
+
+You rarely need these. Both still use your `gh` login.
+
+<Tabs items={["Standalone binary", "Go"]}>
+<Tab value="Standalone binary">
+
+Each release has one binary per platform, named like `linux-amd64` or `darwin-arm64`.
+
+```bash
+curl -L -o gh-select https://github.com/remcostoeten/gh-select/releases/latest/download/linux-amd64
+chmod +x gh-select && mv gh-select ~/.local/bin/
+```
+
+Run it as `gh-select`.
+
+</Tab>
+<Tab value="Go">
+
+Needs Go 1.26 or newer.
+
+```bash
+go install github.com/remcostoeten/gh-select@latest
+```
+
+</Tab>
+</Tabs>
+
+## Next
+
+Go to the [quick start](/docs/quick-start).

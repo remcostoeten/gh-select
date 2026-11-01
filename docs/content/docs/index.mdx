@@ -1,0 +1,51 @@
+---
+title: Introduction
+description: gh-select is a GitHub CLI extension to find, browse and clone GitHub repositories from one terminal screen.
+icon: House
+---
+
+`gh select` lists all your GitHub repositories in the terminal. Pick one and clone it, open it in your editor, read its README, browse its files or download a release.
+
+```bash
+gh extension install remcostoeten/gh-select
+gh select
+```
+
+![gh select showing a filtered list of repositories](/screens/list.png)
+
+That is all you need to start. It uses your existing `gh` login, so there is nothing to set up.
+
+## What you can do
+
+<Cards>
+  <Card
+    icon={<SearchIcon />}
+    title="Find a repository"
+    href="/docs/guides/finding-repositories"
+    description="Your repos, your stars, or all of GitHub."
+  />
+  <Card
+    icon={<PageIcon />}
+    title="Take only some files"
+    href="/docs/guides/browsing-and-partial-clone"
+    description="Browse a repo, mark files and clone just those."
+  />
+  <Card
+    icon={<DownloadIcon />}
+    title="Download a release"
+    href="/docs/guides/releases"
+    description="The right build for your machine, checksum verified."
+  />
+  <Card
+    icon={<PaletteIcon />}
+    title="Change the look"
+    href="/docs/guides/themes"
+    description="Ten themes, or write your own."
+  />
+</Cards>
+
+## Next
+
+1. [Install it](/docs/installation).
+2. Follow the [quick start](/docs/quick-start).
+3. Look up a command or key in the [reference](/docs/reference/commands).
