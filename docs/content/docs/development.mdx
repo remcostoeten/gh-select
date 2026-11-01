@@ -1,0 +1,100 @@
+---
+title: Development
+description: Build gh-select from source, run its checks, and how releases and this documentation site are built.
+icon: Route
+---
+
+gh-select is a Go program. It needs Go 1.26 or newer.
+
+## Build and run
+
+```bash
+git clone https://github.com/remcostoeten/gh-select
+cd gh-select
+scripts/dev.sh check     # vet, test and build
+scripts/dev.sh run       # build and run ./gh-select
+scripts/dev.sh install   # install the local build as gh select
+```
+
+`scripts/dev.sh help` lists every command:
+
+| Command       | Does                                                                                                                    |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `build`       | builds `./gh-select` with the version from `git describe`                                                               |
+| `run [args]`  | builds, then runs `./gh-select` with the arguments                                                                      |
+| `test`        | `go test ./...`                                                                                                         |
+| `vet`         | `go vet ./...`                                                                                                          |
+| `check`       | vet, test and build                                                                                                     |
+| `install`     | builds and installs the local checkout as the `gh select` extension, replacing an existing install                      |
+| `install-bin` | builds and copies the binary to `$PREFIX/bin`, `~/.local/bin` by default                                                |
+| `uninstall`   | removes the extension and the binary                                                                                    |
+| `clean`       | removes the built binary                                                                                                |
+| `demo`        | records `scripts/demo.tape` with `vhs` and renders `assets/showcase.gif` with Remotion. Needs `vhs`, `ffmpeg` and `bun` |
+
+The version is injected at build time with `-ldflags "-X main.version=..."`. Without it, the binary falls back to the commit Go embeds, as `dev+COMMIT`.
+
+## Layout
+
+<Files>
+  <Folder name="gh-select" defaultOpen>
+    <File name="main.go" />
+    <File name="cli.go" />
+    <Folder name="internal" defaultOpen>
+      <Folder name="cache" />
+      <Folder name="config" />
+      <Folder name="download" />
+      <Folder name="gh" />
+      <Folder name="gitx" />
+      <Folder name="local" />
+      <Folder name="sys" />
+      <Folder name="ui" />
+      <Folder name="update" />
+    </Folder>
+    <Folder name="scripts" />
+    <Folder name="showcase" />
+    <Folder name="docs" />
+  </Folder>
+</Files>
+
+| Path                | Holds                                                                                              |
+| ------------------- | -------------------------------------------------------------------------------------------------- |
+| `main.go`           | version resolution, running the picker, the actions after it closes, `doctor`, `limits`, `refresh` |
+| `cli.go`            | command and option parsing, help output, typo suggestions                                          |
+| `internal/gh`       | GitHub access through `go-gh`: repositories, search, trees, releases, rate limits, deletion        |
+| `internal/ui`       | the Bubble Tea app: list, action menu, tree browser, releases, themes, help overlay                |
+| `internal/cache`    | the on-disk repository cache                                                                       |
+| `internal/config`   | environment variables and the config and cache directories                                         |
+| `internal/download` | release asset downloads, checksum verification, archive unpacking                                  |
+| `internal/gitx`     | clone, sparse clone and pull through `git`                                                         |
+| `internal/local`    | discovering existing clones                                                                        |
+| `internal/sys`      | clipboard, browser and editor                                                                      |
+| `internal/update`   | the daily new-release check                                                                        |
+| `showcase`          | the Remotion project behind `assets/showcase.gif`                                                  |
+
+Tests sit next to the code they cover, in `*_test.go` files.
+
+## Releases
+
+Pushing a tag that starts with `v` runs the release workflow. It uses `cli/gh-extension-precompile` to cross-compile a binary per platform and attach it to the GitHub release, with the tag as the version. `gh extension install` then downloads the right binary. Every user-facing change goes into `CHANGELOG.md`, which this site publishes as the [changelog](/docs/changelog).
+
+CI builds, vets and tests on Linux and macOS for pushes to `master` and `main`, and for pull requests.
+
+## This documentation site
+
+The site lives in `docs/`. It is built on the docs-boilerplate framework: Next.js, Fumadocs and MDX, run with Bun.
+
+```bash
+cd docs
+bun install
+bun dev                # http://localhost:3000
+bun run check          # format and lint
+bun run typecheck
+bun test
+bun run build          # syncs the changelog, checks internal links, builds
+```
+
+Pages are MDX files in `docs/content/docs`. The sidebar order comes from the `meta.json` in each folder. The changelog page is generated from the repository's `CHANGELOG.md` and should not be edited by hand. Set `NEXT_PUBLIC_SITE_URL` to the production URL before a production build, or canonical links and social images point at `localhost`.
+
+When a command, option, environment variable or key changes, update its reference page in the same change.
+
+The screenshots in `docs/public/screens` are recorded with `vhs`. `scripts/docs-shots.tape` captures the app and `scripts/docs-shots-cli.tape` captures command output. Both expect a release-style build at `/tmp/ghs/gh-select`, made with `go build -ldflags "-X main.version=v2.6.0"`, and a `gh()` shell function in `/tmp/ghs/fn.sh` that sends `gh select` to it. Re-record them after a visual change.

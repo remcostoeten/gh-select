@@ -1,0 +1,99 @@
+.code-block .twoslash-meta-line {
+  padding-inline: var(--code-gutter);
+}
+
+.code-block[data-line-numbers] .twoslash-meta-line {
+  padding-left: calc(var(--code-gutter) + 2.25rem);
+}
+
+.code-block .twoslash-error-line {
+  background: var(--color-twoslash-error);
+}
+
+.code-block .twoslash-error-line,
+.code-block .twoslash-tag-line {
+  border-left: 0;
+}
+
+.code-block .twoslash-popup-container,
+.code-block .twoslash-completion-list {
+  border-color: var(--code-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-fd-popover);
+  font-family: var(--font-mono);
+}
+
+.code-block .twoslash-popup-container pre {
+  width: auto;
+  min-width: 0;
+  padding: 0;
+  white-space: pre;
+}
+
+.code-block .twoslash-popup-container code,
+.fd-twoslash-popover .twoslash-popup-code {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 12px !important;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.code-block .twoslash-popup-container pre code {
+  white-space: inherit;
+}
+
+.code-block .twoslash-popup-container .line,
+.fd-twoslash-popover .twoslash-popup-code .line {
+  display: inline;
+  min-height: 0;
+  padding-inline: 0;
+}
+
+.code-block .twoslash-popup-container .line::after {
+  content: none;
+}
+
+.code-block .twoslash-completion-list li {
+  font-size: 12px;
+}
+
+.code-block .twoslash-hover {
+  cursor: help;
+}
+
+.fd-twoslash-popover {
+  border-radius: var(--radius-lg);
+  padding: calc(var(--spacing) * 2.5);
+  font-size: 13px;
+}
+
+.fd-twoslash-popover pre {
+  margin: 0;
+  overflow-x: auto;
+  background: transparent !important;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.fd-twoslash-popover pre code {
+  display: block;
+  width: max-content;
+}
+
+.fd-twoslash-popover .twoslash-popup-docs {
+  font-size: 13px !important;
+  line-height: 1.55 !important;
+  color: color-mix(in oklab, var(--color-fd-popover-foreground) 75%, transparent);
+}
+
+.fd-twoslash-popover .twoslash-popup-docs p {
+  margin: 0;
+}
+
+.fd-twoslash-popover .twoslash-popup-docs-tags {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing) * 1);
+}

@@ -1,0 +1,81 @@
+---
+title: Cloning and local clones
+description: Choose where clones land, open them in your editor, pull them, and let gh-select recognize repositories you already cloned.
+icon: Route
+---
+
+## Clone a repository
+
+Press `enter` on a repository and choose **Clone**. A repository you have not cloned starts with **Clone** and **Clone & open**. One you already cloned starts with **Open in editor** and **Pull**, as in this screenshot:
+
+![The action menu of a repository that is already cloned](/screens/actions.png)
+
+## The clone directory
+
+By default `git` clones into the current directory. Set a clone root and every new clone lands in `ROOT/REPO` instead.
+
+```bash
+export GH_SELECT_CLONE_DIR=~/dev
+gh select -d ~/code      # one run, wins over the variable
+```
+
+A leading `~` is expanded even inside a quoted variable. The root is created when it does not exist. gh-select refuses to clone onto a folder that already exists, and prints `PATH already exists`.
+
+## Clone actions
+
+| Action            | What it runs                                                                     |
+| ----------------- | -------------------------------------------------------------------------------- |
+| **Clone**         | `git clone https://github.com/OWNER/REPO.git [DIR]`                              |
+| **Clone & open**  | the clone, then your editor on the new folder                                    |
+| **Clone branch…** | `git clone --branch BRANCH ...` for the branch you pick                          |
+| **Browse files…** | a [partial clone](/docs/guides/browsing-and-partial-clone) of the paths you mark |
+
+Git's progress prints to the terminal after the screen closes. In `--print-path` mode it goes to stderr so stdout stays clean.
+
+## Repositories you already cloned
+
+gh-select scans for working copies and tags matching repositories `local`. The details block shows the path, and `is:local` filters the list to them. See [how it works](/docs/how-it-works#local-clones) for what the scan reads and skips.
+
+A cloned repository's action menu changes. Instead of a clone that would fail or duplicate it, it leads with:
+
+| Action             | Effect                                  |
+| ------------------ | --------------------------------------- |
+| **Open in editor** | opens the local clone                   |
+| **Pull**           | `git pull --ff-only` in the local clone |
+| **Clone again**    | a second, separate copy                 |
+
+### Where to search
+
+The scan covers more than the clone root. In order of preference:
+
+1. Each directory in `GH_SELECT_SCAN_DIRS`, five levels deep.
+2. The clone directory, two levels deep.
+3. The current directory, two levels deep.
+4. Your home directory, five levels deep.
+
+```bash
+export GH_SELECT_SCAN_DIRS=~/work:~/oss
+```
+
+The list is separated like `PATH`, with `:` on Unix and `;` on Windows. Setting it never hides clones the built-in roots would have found.
+
+## Your editor
+
+**Open in editor** and **Clone & open** use the first of these that is set:
+
+1. `$VISUAL`
+2. `$EDITOR`, which may include flags, as in `code -w`
+3. The first of `cursor`, `code`, `zed`, `nvim`, `vim` and `nano` found on `PATH`
+
+The editor inherits your terminal, so terminal editors work, and gh-select returns when you quit them. With none available, the action fails with `no editor found, set $EDITOR`.
+
+## Copy and open
+
+| Action              | Effect                              |
+| ------------------- | ----------------------------------- |
+| **Copy name**       | `owner/repo` to the clipboard       |
+| **Copy URL**        | the https link to the clipboard     |
+| **Open in browser** | the repository page on github.com   |
+| **View README**     | the README rendered in the terminal |
+
+Without a clipboard tool, the value is printed with `(clipboard not available)` instead. Install `wl-clipboard`, `xclip` or `xsel` on Linux.

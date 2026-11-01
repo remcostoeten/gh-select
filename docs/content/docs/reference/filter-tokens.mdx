@@ -1,0 +1,50 @@
+---
+title: Filter tokens
+description: The lang and is tokens you can type into any list, and how they translate to GitHub search.
+icon: Search
+sidebarBadge: tui
+---
+
+Tokens are words in the search box. They are removed from the text before it is matched, and every token must hold for a repository to stay in the list. Several tokens combine, and so does text.
+
+```txt
+cli lang:go is:mine
+is:private is:fork
+lang:typescript is:active
+```
+
+## Tokens
+
+| Token                        | Keeps                                                 | Applies in GitHub scope as |
+| ---------------------------- | ----------------------------------------------------- | -------------------------- |
+| `lang:NAME`, `language:NAME` | repos whose main language is `NAME`, case-insensitive | `language:NAME`            |
+| `is:public`                  | public repos                                          | `is:public`                |
+| `is:private`                 | private repos                                         | `is:private`               |
+| `is:fork`                    | forks                                                 | `fork:only`                |
+| `is:source`                  | original repos, not forks                             | `fork:false`               |
+| `is:archived`                | archived repos                                        | `archived:true`            |
+| `is:active`                  | repos that are not archived                           | `archived:false`           |
+| `is:local`                   | repos you have cloned                                 | applied to the results     |
+| `is:mine`                    | repos you own                                         | applied to the results     |
+
+Tokens are case-insensitive. An unknown `is:` value is treated as ordinary text.
+
+## Where they apply
+
+- **My repos** and **Starred** apply every token to the cached list.
+- **GitHub** rewrites tokens into GitHub's own qualifiers. `is:local` and `is:mine` have no GitHub equivalent, so they filter the returned results instead.
+
+## GitHub qualifiers
+
+In GitHub scope, these qualifiers are also passed through as typed: `language:`, `is:`, `topic:`, `stars:`, `archived:`, `fork:`, `user:` and `org:`.
+
+```txt
+topic:tui stars:>500 language:go
+org:charmbracelet
+```
+
+The tokens `language:` and `is:` can still be matched against an owner listing. Any other qualifier sends the whole query to GitHub search.
+
+## Combining with text
+
+Free text is matched against the repository name. In My repos and Starred, results with free text are ranked by fuzzy match unless you chose a sort with `ctrl+s`.

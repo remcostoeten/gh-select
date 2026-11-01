@@ -1,0 +1,13 @@
+{
+  "title": "Guides",
+  "icon": "Compass",
+  "pages": [
+    "finding-repositories",
+    "browsing-and-partial-clone",
+    "releases",
+    "cloning-and-local-clones",
+    "scripting",
+    "deleting-repositories",
+    "themes"
+  ]
+}
