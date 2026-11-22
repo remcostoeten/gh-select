@@ -53,6 +53,7 @@ export const site: SiteConfig = {
   author: { name: "Remco Stoeten", url: "https://remcostoeten.com" },
   keywords: ["gh-select", "gh extension", "github cli", "tui", "git clone", "sparse checkout"],
   logo: null,
+  favicon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#282828"/><path d="M8 10l7 6-7 6" fill="none" stroke="#fe8019" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M17 23h8" stroke="#fe8019" stroke-width="3" stroke-linecap="round"/></svg>`,
   theme: { accent: { light: "#af3a03", dark: "#fe8019" } },
   pageFooter: {
     editLink: true,
