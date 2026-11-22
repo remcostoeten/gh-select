@@ -4,7 +4,7 @@ import type { NextConfig } from "next";
 const config: NextConfig = {
   transpilePackages: ["shiki"],
   async redirects() {
-    return [{ source: "/", destination: "/docs", permanent: false }];
+    return [{ source: "/", destination: "/docs", permanent: true }];
   },
   async rewrites() {
     return [
